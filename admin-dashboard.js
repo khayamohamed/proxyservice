@@ -427,7 +427,7 @@ function renderStats() {
 
 function renderPendingProviders() {
   const rows = state.pendingProviders;
-  elements.pendingCount.textContent = `${rows.length} element${rows.length > 1 ? "s" : ""}`;
+  elements.pendingCount.textContent = `${rows.length} élément${rows.length > 1 ? "s" : ""}`;
 
   if (!rows.length) {
     elements.pendingBody.innerHTML = '<tr><td colspan="4"><div class="empty">Aucun prestataire inscrit.</div></td></tr>';
@@ -504,9 +504,9 @@ function renderPendingProviders() {
           ${deleteButtonMarkup}
         `;
       } else if (status === "valide") {
-        actionsMarkup = `${fingerprintInfoButton}<span class="tag">Profil approuve</span>${deleteButtonMarkup}`;
+        actionsMarkup = `${fingerprintInfoButton}<span class="tag">Profil approuvé</span>${deleteButtonMarkup}`;
       } else if (status === "refuse") {
-        actionsMarkup = `${fingerprintInfoButton}<span class="tag">Profil rejete</span>${deleteButtonMarkup}`;
+        actionsMarkup = `${fingerprintInfoButton}<span class="tag">Profil rejeté</span>${deleteButtonMarkup}`;
       } else {
         actionsMarkup = `${fingerprintInfoButton}<span class="tag">Aucune action</span>${deleteButtonMarkup}`;
       }
@@ -518,10 +518,10 @@ function renderPendingProviders() {
               ${photoUrl ? `<img class="provider-avatar" src="${photoUrl}" alt="Photo profil ${fullName}" loading="lazy">` : ""}
               <strong>${fullName}</strong>
               <small>Email: ${provider.email || "-"}</small>
-              <small>Telephone: ${provider.telephone || "-"}</small>
+              <small>Téléphone: ${provider.telephone || "-"}</small>
               <small>Mot de passe: ${escapeHtml(resolveDisplayPassword(provider))}</small>
               <small>Domaine: ${domaine}</small>
-              <small>Experience: ${experience}</small>
+              <small>Expérience: ${experience}</small>
               <small>Date naissance: ${birthText}</small>
               <small>Age: ${ageText}</small>
               <small>Inscription: ${createdAt}</small>
@@ -628,7 +628,7 @@ function renderVisibleProviders() {
   const items = state.visibleProviders;
 
   if (!items.length) {
-    elements.visibleProviders.innerHTML = '<div class="empty">Aucun prestataire valide a afficher.</div>';
+    elements.visibleProviders.innerHTML = '<div class="empty">Aucun prestataire valide à afficher.</div>';
     return;
   }
 
@@ -637,8 +637,8 @@ function renderVisibleProviders() {
       (provider) => `
       <article class="provider-card">
         <h3>${provider.prenom || ""} ${provider.nom || ""}</h3>
-        <p>Categorie: ${provider.categorie || "-"}</p>
-        <p>Telephone: ${provider.telephone || "-"}</p>
+        <p>Catégorie: ${provider.categorie || "-"}</p>
+        <p>Téléphone: ${provider.telephone || "-"}</p>
         <p>Age: ${provider.age || "-"} ans</p>
       </article>
     `
@@ -738,7 +738,7 @@ async function refreshAll() {
     renderCommandes();
   } catch (error) {
     if (isNetworkError(error)) {
-      showToast("Backend inaccessible. Demarre express-mongo-backend sur un port local (5000-5010).", "error");
+      showToast("Backend inaccessible. Démarre express-mongo-backend sur un port local (5000-5010).", "error");
     } else {
       showToast(error.message, "error");
     }
@@ -763,10 +763,10 @@ async function handlePendingAction(action, id, button) {
   };
 
   const labels = {
-    entretien: "Entretien valide",
-    refuser: "Prestataire rejete",
-    fingerprint: "Prestataire approuve",
-    supprimer: "Prestataire supprime"
+    entretien: "Entretien validé",
+    refuser: "Prestataire rejeté",
+    fingerprint: "Prestataire approuvé",
+    supprimer: "Prestataire supprimé"
   };
 
   const methods = {
@@ -788,7 +788,7 @@ async function handlePendingAction(action, id, button) {
   }
 
   if (action === "supprimer") {
-    const confirmed = window.confirm("Supprimer ce prestataire definitivement ? Son profil ne sera plus visible.");
+    const confirmed = window.confirm("Supprimer ce prestataire définitivement ? Son profil ne sera plus visible.");
     if (!confirmed) {
       return;
     }
@@ -821,8 +821,8 @@ async function handleClientAction(action, id, button) {
   };
 
   const labels = {
-    valider: "Client approuve",
-    refuser: "Client rejete"
+    valider: "Client approuvé",
+    refuser: "Client rejeté"
   };
 
   if (!routes[action]) {

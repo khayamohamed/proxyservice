@@ -138,8 +138,8 @@ async function getFingerprintPage(req, res, next) {
     const status = normalizeStatus(prestataire.statutVerification);
     const message =
       status === "entretien_valide" || payload.shouldOpenFingerprintPage
-        ? "Entretien approuve. Ouvrez la page fingerprint."
-        : "Fingerprint deja complete. Redirection vers l'accueil.";
+        ? "Entretien approuvé. Ouvrez la page fingerprint."
+        : "Fingerprint déjà complété. Redirection vers l'accueil.";
 
     return res.json({
       message,
@@ -227,7 +227,7 @@ async function submitFingerprint(req, res, next) {
     await prestataire.save();
 
     return res.json({
-      message: "Fingerprint enregistre. Redirection vers l'accueil de l'application.",
+      message: "Fingerprint enregistré. Redirection vers l'accueil de l'application.",
       nextPage: "page8",
       redirectPath: "/index.html",
       shouldOpenFingerprintPage: false,

@@ -850,15 +850,15 @@ async function captureFallbackFingerprintHash(account) {
 function getFingerprintFallbackReasonText(reason) {
   switch (String(reason || "").toLowerCase()) {
     case "insecure_context":
-      return "Face ID / Touch ID indisponible ici (HTTPS requis sur mobile). Utilisation d'une verification appareil de secours.";
+      return "Face ID / Touch ID indisponible ici (HTTPS requis sur mobile). Utilisation d'une vérification appareil de secours.";
     case "unsupported_browser":
-      return "Navigateur sans support Face ID / Touch ID (passkey). Utilisation d'une verification appareil de secours.";
+      return "Navigateur sans support Face ID / Touch ID (passkey). Utilisation d'une vérification appareil de secours.";
     case "webauthn_not_allowed":
-      return "Validation Face ID / empreinte non confirmee. Utilisation d'une verification appareil de secours.";
+      return "Validation Face ID / empreinte non confirmée. Utilisation d'une vérification appareil de secours.";
     case "webauthn_runtime_error":
-      return "Biometrie indisponible temporairement. Utilisation d'une verification appareil de secours.";
+      return "Biométrie indisponible temporairement. Utilisation d'une vérification appareil de secours.";
     default:
-      return "Utilisation d'une verification appareil de secours.";
+      return "Utilisation d'une vérification appareil de secours.";
   }
 }
 
@@ -881,7 +881,7 @@ async function captureDeviceFingerprint(account) {
     } catch (error) {
       const errorName = String((error && error.name) || "");
       if (errorName === "AbortError") {
-        throw new Error("Validation biometrie annulee. Reessayez puis confirmez Face ID ou empreinte.");
+        throw new Error("Validation biométrique annulée. Réessayez puis confirmez Face ID ou empreinte.");
       }
       if (errorName === "NotAllowedError") {
         runtimeFallbackReason = "webauthn_not_allowed";
@@ -911,7 +911,7 @@ function captureCurrentLocation() {
         longitude: null,
         accuracy: null,
         locationLabel: null,
-        errorMessage: "Geolocalisation non disponible."
+        errorMessage: "Géolocalisation non disponible."
       });
       return;
     }
@@ -929,17 +929,17 @@ function captureCurrentLocation() {
       (error) => {
         const code = Number((error && error.code) || 0);
         const isInsecureContext = !window.isSecureContext;
-        let errorMessage = error && error.message ? String(error.message) : "Geolocalisation refusee.";
+        let errorMessage = error && error.message ? String(error.message) : "Géolocalisation refusée.";
 
         if (isInsecureContext) {
           errorMessage =
-            "Geolocalisation bloquee: iPhone/Safari exige HTTPS. Utilisez le bouton de position manuelle.";
+            "Géolocalisation bloquée : iPhone/Safari exige HTTPS. Utilisez le bouton de position manuelle.";
         } else if (code === 1) {
-          errorMessage = "Geolocalisation refusee. Autorisez la localisation dans les reglages du navigateur.";
+          errorMessage = "Géolocalisation refusée. Autorisez la localisation dans les réglages du navigateur.";
         } else if (code === 2) {
-          errorMessage = "Position indisponible. Verifiez le signal GPS puis reessayez.";
+          errorMessage = "Position indisponible. Vérifiez le signal GPS puis réessayez.";
         } else if (code === 3) {
-          errorMessage = "Geolocalisation trop lente. Reessayez ou utilisez la position manuelle.";
+          errorMessage = "Géolocalisation trop lente. Réessayez ou utilisez la position manuelle.";
         }
 
         resolve({
@@ -1137,11 +1137,11 @@ function syncProviderCoverageReadyIndicator(isReady, isManualLocation = false, h
   }
 
   if (isReady) {
-    providerCoverageReadyIndicator.textContent = "Position manuelle validee. Vous pouvez continuer.";
+    providerCoverageReadyIndicator.textContent = "Position manuelle validée. Vous pouvez continuer.";
   } else if (hasDetectedLocation && !isManualLocation) {
-    providerCoverageReadyIndicator.textContent = "Position detectee, mais validation manuelle obligatoire.";
+    providerCoverageReadyIndicator.textContent = "Position détectée, mais validation manuelle obligatoire.";
   } else {
-    providerCoverageReadyIndicator.textContent = "Position manuelle non validee";
+    providerCoverageReadyIndicator.textContent = "Position manuelle non validée";
   }
   providerCoverageReadyIndicator.classList.toggle("is-ready", Boolean(isReady));
 }
@@ -1410,7 +1410,7 @@ function syncProviderCoverageMap(locationData) {
         };
         saveProviderCoverageFromLocation(manualLocation);
         applyProviderCoverageStepUi(manualLocation, { preserveFeedback: true });
-        setProviderCoverageFeedback("Position manuelle enregistree. Vous pouvez continuer.", "success");
+        setProviderCoverageFeedback("Position manuelle enregistrée. Vous pouvez continuer.", "success");
         setProviderCoverageManualInputsFromLocation(manualLocation);
       };
       providerCoverageLeafletMap.on("click", providerCoverageLeafletClickHandler);
@@ -1437,8 +1437,8 @@ function applyProviderCoverageStepUi(locationData = null, options = {}) {
     providerCoverageStatus.textContent = hasLocation
       ? isManualLocation
         ? "Validee (manuel)"
-        : "Position detectee (GPS)"
-      : "Non validee";
+        : "Position détectée (GPS)"
+      : "Non validée";
   }
 
   if (providerCoverageLocation) {
@@ -1462,12 +1462,12 @@ function applyProviderCoverageStepUi(locationData = null, options = {}) {
   if (!preserveFeedback) {
     if (canContinueWithManual) {
       setProviderCoverageFeedback(
-        "Position manuelle validee. Vous pouvez continuer.",
+        "Position manuelle validée. Vous pouvez continuer.",
         "success"
       );
     } else if (hasLocation) {
       setProviderCoverageFeedback(
-        "Position detectee. Selection manuelle obligatoire avant de continuer.",
+        "Position détectée. Sélection manuelle obligatoire avant de continuer.",
         "neutral"
       );
     } else {
@@ -1516,7 +1516,7 @@ async function saveProviderCoverageToBackend(locationData, account = null) {
   const scopedAccount = account && account.email ? account : resolveProviderForFingerprintAccessFromLocalState() || getActiveProviderAccount();
   const email = String((scopedAccount && scopedAccount.email) || "").trim().toLowerCase();
   if (!email) {
-    throw new Error("Email prestataire manquant pour enregistrer la geolocalisation.");
+    throw new Error("Email prestataire manquant pour enregistrer la géolocalisation.");
   }
 
   const payloadBody = {
@@ -1557,7 +1557,7 @@ async function saveProviderCoverageToBackend(locationData, account = null) {
             continue;
           }
 
-          throw new Error(payload.message || "Impossible de sauvegarder la geolocalisation prestataire.");
+          throw new Error(payload.message || "Impossible de sauvegarder la géolocalisation prestataire.");
         }
 
         saveApiBase(apiBase);
@@ -2166,7 +2166,7 @@ function syncPage18ConfirmAddressButtonState() {
   const isConfirmed = hasPage18ManualMapAddressConfirmed();
   page18ConfirmAddressBtn.disabled = !hasSelected || isConfirmed;
   page18ConfirmAddressBtn.classList.toggle("is-confirmed", isConfirmed);
-  page18ConfirmAddressBtn.textContent = isConfirmed ? "Adresse confirmee" : "Confirmer l'adresse";
+  page18ConfirmAddressBtn.textContent = isConfirmed ? "Adresse confirmée" : "Confirmer l'adresse";
 }
 
 function syncPage18PaymentButtonState() {
@@ -2242,7 +2242,7 @@ async function applyGpsOrderAddressFromDevice() {
   const locationData = await captureCurrentLocation();
   if (!isValidOrderGeoLocation(locationData)) {
     throw new Error(
-      String(locationData && locationData.errorMessage).trim() || "Impossible de recuperer votre position GPS."
+      String(locationData && locationData.errorMessage).trim() || "Impossible de récupérer votre position GPS."
     );
   }
 
@@ -2308,7 +2308,7 @@ function resetProviderIdentityStepUi() {
     providerIdentityCaptureBtn.textContent = "Scanner Face ID / empreinte du prestataire";
   }
   setProviderIdentityFeedback(
-    "Demandez au prestataire de valider sa biometrie pour confirmer son identite.",
+    "Demandez au prestataire de valider sa biométrie pour confirmer son identité.",
     "neutral"
   );
 }
@@ -2353,12 +2353,12 @@ function syncClientInterventionPhotosMeta() {
       ? Array.from(clientInterventionPhotosInput.files)
       : [];
   if (!files.length) {
-    clientInterventionPhotosMeta.textContent = "Aucune photo ajoutee.";
+    clientInterventionPhotosMeta.textContent = "Aucune photo ajoutée.";
     return;
   }
 
   const suffix = files.length > 1 ? "s" : "";
-  clientInterventionPhotosMeta.textContent = `${files.length} photo${suffix} ajoutee${suffix}.`;
+  clientInterventionPhotosMeta.textContent = `${files.length} photo${suffix} ajoutée${suffix}.`;
 }
 
 function syncClientInterventionRatingMeta() {
@@ -2469,7 +2469,7 @@ async function resolveProviderForClientIdentityVerification() {
   const providerProfile = getCurrentOrderProviderProfile();
   const email = String((providerProfile && providerProfile.email) || "").trim().toLowerCase();
   if (!email) {
-    throw new Error("Email du prestataire introuvable pour la verification.");
+    throw new Error("Email du prestataire introuvable pour la vérification.");
   }
 
   const localAccount = findProviderAccountByEmail(email);
@@ -2950,7 +2950,7 @@ if (profilePhotoChangeBtn && profilePhotoUploadInput) {
       upsertClientAccount(nextClient);
       applyActiveUserProfile();
     } catch (error) {
-      alert((error && error.message) || "Impossible de mettre a jour la photo.");
+      alert((error && error.message) || "Impossible de mettre à jour la photo.");
     } finally {
       profilePhotoUploadInput.value = "";
     }
@@ -3802,7 +3802,7 @@ function renderDynamicProviderDirectory() {
               .join("")
           : `<div class="page8-verified-empty">Aucun ${escapeHtml(
               getProviderCategoryPluralLabel(categoryKey)
-            )} verifie pour le moment.</div>`;
+            )} vérifié pour le moment.</div>`;
 
         return `
           <section class="dynamic-provider-section" data-provider-category="${safeCategory}">
@@ -3849,7 +3849,7 @@ function renderDynamicProviderDirectory() {
     }
 
     if (!plumbers.length) {
-      container.innerHTML = '<div class="page8-verified-empty">Aucun plombier verifie pour le moment.</div>';
+      container.innerHTML = '<div class="page8-verified-empty">Aucun plombier vérifié pour le moment.</div>';
       return;
     }
 
@@ -3917,9 +3917,9 @@ function renderDynamicProviderDirectory() {
       if (normalizedFilter) {
         container.innerHTML = `<div class="page8-verified-empty">Aucun ${escapeHtml(
           getProviderCategoryPluralLabel(normalizedFilter)
-        )} verifie pour le moment.</div>`;
+        )} vérifié pour le moment.</div>`;
       } else {
-        container.innerHTML = '<div class="page8-verified-empty">Aucun prestataire verifie pour le moment.</div>';
+        container.innerHTML = '<div class="page8-verified-empty">Aucun prestataire vérifié pour le moment.</div>';
       }
       return;
     }
@@ -4617,12 +4617,12 @@ async function renderPage20GoogleMap() {
       fillColor: "#73de98",
       fillOpacity: 0.9
     }).addTo(page20MapInstance);
-    page20MapArrivedMarker.bindTooltip("Prestataire arrive", {
+    page20MapArrivedMarker.bindTooltip("Prestataire arrivé", {
       permanent: true,
       direction: "top",
       className: "page20-arrived-tooltip"
     });
-    page20MapArrivedMarker.bindPopup("Prestataire arrive a l'adresse de prestation.");
+    page20MapArrivedMarker.bindPopup("Prestataire arrivé à l'adresse de prestation.");
 
     page20MapRouteLine = window.L.polyline([providerLatLng, serviceLatLng], {
       color: "#1f78d1",
@@ -4750,7 +4750,7 @@ function renderPage18ProviderLocalFallbackMap(locationData, serviceRadiusKm, rea
   const pricingUpperBound = Math.max(2, Math.round(normalizedRadiusKm));
   const zoneLabel =
     pricingUpperBound > 2 ? `Zone: 0-2 km / 2-${pricingUpperBound} km` : "Zone: 0-2 km (prix normal)";
-  const sourceLabel = hasProviderCoverageLocation(locationData) ? "Position prestataire detectee" : "Position par defaut";
+  const sourceLabel = hasProviderCoverageLocation(locationData) ? "Position prestataire détectée" : "Position par défaut";
   const serviceAddressLabel = getPage18ServiceAddressLabel();
   const servicePosition = getPage18ServiceAddressMapPosition();
   const servicePositionLabel = servicePosition
@@ -5053,7 +5053,7 @@ async function renderPage18ProviderCoverageMap() {
       }
     }, 0);
   } catch (error) {
-    const reason = "Mode simplifie actif (carte indisponible).";
+    const reason = "Mode simplifié actif (carte indisponible).";
     const renderedFallback = renderPage18ProviderLocalFallbackMap(
       fallbackLocationData,
       fallbackServiceRadiusKm,
@@ -5492,7 +5492,7 @@ function renderPage22FinishedRequests() {
   const finishedRequests = getClientFinishedRequestsForEmail(activeClientEmail);
   if (!activeClientEmail || !finishedRequests.length) {
     page22FinishedRequestsList.innerHTML =
-      '<div class="page22-finished-empty">Aucune demande terminee pour le moment.</div>';
+      '<div class="page22-finished-empty">Aucune demande terminée pour le moment.</div>';
     return;
   }
 
@@ -5505,7 +5505,7 @@ function renderPage22FinishedRequests() {
       const providerName = escapeHtml(formatProviderFirstName(entry.providerName || "Prestataire") || "Prestataire");
       const workDone = String((entry && entry.completionWorkDone) || "").trim().toLowerCase();
       const isNotValidated = workDone === "no" || workDone === "false";
-      const statusText = isNotValidated ? "travail non valide" : "service effectue";
+      const statusText = isNotValidated ? "travail non valide" : "service effectué";
       const ratingValue = Number(entry && entry.completionRating);
       const ratingLabel = Number.isFinite(ratingValue) && ratingValue >= 1 ? `${Math.round(ratingValue)}/5` : "-";
       const photoCountCandidate = Number(entry && entry.completionPhotoCount);
@@ -5561,7 +5561,7 @@ function renderPage23CancelledRequests() {
 
   if (!activeClientEmail || !cancelledRequests.length) {
     page23CancelledRequestsList.innerHTML =
-      '<div class="page23-cancelled-empty">Aucune demande annulee pour le moment.</div>';
+      '<div class="page23-cancelled-empty">Aucune demande annulée pour le moment.</div>';
     return;
   }
 
@@ -5973,7 +5973,7 @@ async function submitCommandeFromCurrentContext(locationData = null) {
 
   const providerProfile = getCurrentOrderProviderProfile();
   if (!providerProfile || !providerProfile.name) {
-    throw new Error("Prestataire introuvable. Ouvrez un profil puis reessayez.");
+    throw new Error("Prestataire introuvable. Ouvrez un profil puis réessayez.");
   }
 
   const payloadBody = {
@@ -6014,7 +6014,7 @@ async function submitCommandeFromCurrentContext(locationData = null) {
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.message || "Creation commande impossible.");
+        throw new Error(payload.message || "Création commande impossible.");
       }
 
       saveApiBase(apiBase);
@@ -6056,14 +6056,14 @@ function showSubmissionWaitingPage(profileType, currentStatus = "en_attente") {
   if (isPendingStatus(normalizedStatus)) {
     if (waitingStatusMessage) {
       waitingStatusMessage.textContent = isProvider
-        ? "Votre dossier prestataire est en cours de traitement par notre equipe."
-        : "Votre dossier client est en cours de traitement par notre equipe.";
+        ? "Votre dossier prestataire est en cours de traitement par notre équipe."
+        : "Votre dossier client est en cours de traitement par notre équipe.";
     }
 
     if (waitingContactMessage) {
       waitingContactMessage.textContent = isProvider
         ? "Vous ne pourrez continuer qu'apres approbation de votre profil par l'administrateur."
-        : "Vous serez contacte(e) par telephone apres traitement de votre profil. Le statut final sera approuve ou rejete.";
+        : "Vous serez contacté(e) par téléphone après traitement de votre profil. Le statut final sera approuvé ou rejeté.";
     }
 
     if (waitingGoLoginBtn) {
@@ -6073,7 +6073,7 @@ function showSubmissionWaitingPage(profileType, currentStatus = "en_attente") {
     }
   } else if (normalizedStatus === "valide") {
     if (waitingStatusMessage) {
-      waitingStatusMessage.textContent = "Votre profil a ete approuve par l'administrateur.";
+      waitingStatusMessage.textContent = "Votre profil a été approuvé par l'administrateur.";
     }
 
     if (waitingContactMessage) {
@@ -6088,11 +6088,11 @@ function showSubmissionWaitingPage(profileType, currentStatus = "en_attente") {
     }
   } else {
     if (waitingStatusMessage) {
-      waitingStatusMessage.textContent = "Votre profil a ete rejete par l'administrateur.";
+      waitingStatusMessage.textContent = "Votre profil a été rejeté par l'administrateur.";
     }
 
     if (waitingContactMessage) {
-      waitingContactMessage.textContent = "Notre equipe vous contactera par telephone pour les prochaines etapes.";
+      waitingContactMessage.textContent = "Notre équipe vous contactera par téléphone pour les prochaines étapes.";
     }
 
     if (waitingGoLoginBtn) {
@@ -6243,7 +6243,7 @@ if (loginBtn) {
         return;
       }
 
-      setLoginFeedback("Aucun compte client ou prestataire trouve avec cet email.", "error");
+      setLoginFeedback("Aucun compte client ou prestataire trouvé avec cet email.", "error");
     } catch (error) {
       if (isNetworkError(error)) {
         setLoginFeedback("Connexion backend impossible. Lance express-mongo-backend sur un port local (5000-5010).", "error");
@@ -6534,7 +6534,7 @@ if (providerSignupSubmitBtn) {
         statutVerification: "en_attente"
       });
       savePendingVerification("prestataire", email);
-      setProviderSignupFeedback("Dossier envoye. Statut: en attente de verification admin.", "success");
+      setProviderSignupFeedback("Dossier envoyé. Statut : en attente de vérification admin.", "success");
 
       if (providerSignupLastNameInput) providerSignupLastNameInput.value = "";
       if (providerSignupFirstNameInput) providerSignupFirstNameInput.value = "";
@@ -7070,7 +7070,7 @@ if (page18ConfirmAddressBtn) {
     const distancePricing = resolveCurrentOrderDistancePricingFromMap();
     if (!distancePricing) {
       setPage18AddressFeedback(
-        "Impossible de calculer la distance avec le prestataire. Verifiez les positions puis reessayez.",
+        "Impossible de calculer la distance avec le prestataire. Vérifiez les positions puis réessayez.",
         "error"
       );
       return;
@@ -7080,7 +7080,7 @@ if (page18ConfirmAddressBtn) {
     currentOrderTracking.calculatedPriceDh = Number(distancePricing.totalPriceDh);
     currentOrderTracking.addressConfirmed = true;
     setPage18AddressFeedback(
-      `Adresse confirmee. Distance: ${Number(distancePricing.distanceKm).toFixed(2)} km, prix: ${Math.round(
+      `Adresse confirmée. Distance: ${Number(distancePricing.distanceKm).toFixed(2)} km, prix: ${Math.round(
         Number(distancePricing.totalPriceDh)
       )}DH.`,
       "success"
@@ -7118,7 +7118,7 @@ if (page18AddressGeolocBtn) {
     const previousLabel = page18AddressGeolocBtn.textContent;
     page18AddressGeolocBtn.disabled = true;
     page18AddressGeolocBtn.textContent = "Localisation...";
-    setPage18AddressFeedback("Detection de votre position en cours...", "neutral");
+    setPage18AddressFeedback("Détection de votre position en cours...", "neutral");
 
     try {
       await applyGpsOrderAddressFromDevice();
@@ -7131,7 +7131,7 @@ if (page18AddressGeolocBtn) {
       }, 250);
     } catch (error) {
       setPage18AddressFeedback(
-        (error && error.message) || "Geolocalisation indisponible. Entrez votre adresse manuellement.",
+        (error && error.message) || "Géolocalisation indisponible. Entrez votre adresse manuellement.",
         "error"
       );
     } finally {
@@ -7216,7 +7216,7 @@ if (openPage19Btn) {
         selectedOngoingRequestId = String(createdRequest.id || "").trim();
         pushClientNotification(
           "request_created",
-          `Demande envoyee a ${createdRequest.providerName || "votre prestataire"}.`,
+          `Demande envoyée à ${createdRequest.providerName || "votre prestataire"}.`,
           { requestId: createdRequest.id }
         );
       }
@@ -7224,7 +7224,7 @@ if (openPage19Btn) {
       previousPageClass = "page18";
       goTo("page19");
     } catch (error) {
-      window.alert(error && error.message ? error.message : "Commande non enregistree.");
+      window.alert(error && error.message ? error.message : "Commande non enregistrée.");
     } finally {
       openPage19Btn.disabled = false;
       labelNode.textContent = previousLabel;
@@ -7332,7 +7332,7 @@ if (clientInterventionFinishBtn) {
     }
 
     if (!pendingProviderIdentityCapture || !pendingProviderIdentityCapture.hash) {
-      setClientInterventionFeedback("Verification biometrie manquante. Revenez a l'etape precedente.", "error");
+      setClientInterventionFeedback("Vérification biométrique manquante. Revenez à l'étape précédente.", "error");
       return;
     }
 
@@ -7366,7 +7366,7 @@ if (clientInterventionFinishBtn) {
 
     pushClientNotification(
       "request_created",
-      `Prestation terminee avec ${String(completedRequest.providerName || "le prestataire").trim()}.`,
+      `Prestation terminée avec ${String(completedRequest.providerName || "le prestataire").trim()}.`,
       { requestId: completedRequest.id }
     );
     const providerNotifEmail = resolveProviderEmailForRequest(completedRequest);
@@ -7374,7 +7374,7 @@ if (clientInterventionFinishBtn) {
       const providerLabel = formatProviderFirstName(completedRequest.providerName || "prestataire") || "prestataire";
       pushProviderNotification(
         "provider_work_completed",
-        `Intervention terminee. Confirmation client pour ${providerLabel}.`,
+        `Intervention terminée. Confirmation client pour ${providerLabel}.`,
         { providerEmail: providerNotifEmail, requestId: completedRequest.id }
       );
       const receivedRating = Number(completedRequest && completedRequest.completionRating);
@@ -7405,8 +7405,8 @@ if (providerIdentityCaptureBtn) {
     pendingProviderIdentityCapture = null;
     syncProviderIdentityContinueButton(false);
     providerIdentityCaptureBtn.disabled = true;
-    providerIdentityCaptureBtn.textContent = "Scan biometrie...";
-    setProviderIdentityFeedback("Verification biometrie du prestataire en cours...", "neutral");
+    providerIdentityCaptureBtn.textContent = "Scan biométrie...";
+    setProviderIdentityFeedback("Vérification biométrique du prestataire en cours...", "neutral");
 
     try {
       const providerAccount = await resolveProviderForClientIdentityVerification();
@@ -7415,12 +7415,12 @@ if (providerIdentityCaptureBtn) {
       }
 
       if (!providerAccount.fingerprintCaptured) {
-        throw new Error("Ce prestataire n'a pas encore d'empreinte/Face ID enregistree.");
+        throw new Error("Ce prestataire n'a pas encore d'empreinte/Face ID enregistrée.");
       }
 
       const fingerprintCapture = await captureDeviceFingerprint(providerAccount);
       if (!fingerprintCapture || !fingerprintCapture.hash) {
-        throw new Error("Impossible de scanner la biometrie du prestataire.");
+        throw new Error("Impossible de scanner la biométrie du prestataire.");
       }
 
       const captureMode = String(fingerprintCapture.mode || "").trim().toLowerCase();
@@ -7437,7 +7437,7 @@ if (providerIdentityCaptureBtn) {
         capturedCredentialId &&
         storedCredentialId !== capturedCredentialId
       ) {
-        throw new Error("Credential biometrie non reconnue pour ce prestataire.");
+        throw new Error("Identifiant biométrique non reconnu pour ce prestataire.");
       }
 
       pendingProviderIdentityCapture = {
@@ -7455,7 +7455,7 @@ if (providerIdentityCaptureBtn) {
         );
       } else {
         setProviderIdentityFeedback(
-          "Verification effectuee en mode simplifie. Cliquez sur Confirmer intervention pour finaliser.",
+          "Vérification effectuée en mode simplifié. Cliquez sur Confirmer intervention pour finaliser.",
           "success"
         );
       }
@@ -7477,7 +7477,7 @@ if (providerIdentityContinueBtn) {
 
     if (!pendingProviderIdentityCapture || !pendingProviderIdentityCapture.hash) {
       syncProviderIdentityContinueButton(false);
-      setProviderIdentityFeedback("Scannez d'abord la biometrie du prestataire.", "error");
+      setProviderIdentityFeedback("Scannez d'abord la biométrie du prestataire.", "error");
       return;
     }
 
@@ -7612,7 +7612,7 @@ if (submitPage24Btn) {
     if (cancelledRequest) {
       pushClientNotification(
         "request_cancelled",
-        `Demande annulee avec ${String(cancelledRequest.providerName || "le prestataire").trim()}.`,
+        `Demande annulée avec ${String(cancelledRequest.providerName || "le prestataire").trim()}.`,
         { requestId: cancelledRequest.id }
       );
     }
@@ -7808,9 +7808,9 @@ function openProviderCoverageManualSelection() {
   } else if (!hasProviderCoverageLocation(providerCoverageLocationData)) {
     setProviderCoverageFeedback("Position manuelle obligatoire: touchez la carte pour choisir votre position.", "neutral");
   } else if (!isProviderCoverageManualLocation(providerCoverageLocationData)) {
-    setProviderCoverageFeedback("Position detectee. Selection manuelle obligatoire avant de continuer.", "neutral");
+      setProviderCoverageFeedback("Position détectée. Sélection manuelle obligatoire avant de continuer.", "neutral");
   } else {
-    setProviderCoverageFeedback("Mode manuel actif: deplacez la carte puis touchez pour ajuster votre position.", "neutral");
+    setProviderCoverageFeedback("Mode manuel actif : déplacez la carte puis touchez pour ajuster votre position.", "neutral");
   }
 }
 
@@ -7841,7 +7841,7 @@ if (providerCoverageManualApplyBtn) {
     }
 
     if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-      setProviderCoverageFeedback("Coordonnees invalides. Latitude -90..90, Longitude -180..180.", "error");
+      setProviderCoverageFeedback("Coordonnées invalides. Latitude -90..90, Longitude -180..180.", "error");
       return;
     }
 
@@ -7868,12 +7868,12 @@ if (providerCoverageManualApplyBtn) {
     }
     applyProviderCoverageStepUi(manualLocation, { preserveFeedback: true });
     if (backendSaved) {
-      setProviderCoverageFeedback("Position manuelle enregistree et sauvegardee en base.", "success");
+      setProviderCoverageFeedback("Position manuelle enregistrée et sauvegardée en base.", "success");
     } else {
       setProviderCoverageFeedback(
         backendErrorMessage
-          ? `Position manuelle enregistree localement, mais sauvegarde serveur impossible (${backendErrorMessage}). Reessayez avant de continuer.`
-          : "Position manuelle enregistree localement, mais sauvegarde serveur impossible. Reessayez avant de continuer.",
+          ? `Position manuelle enregistrée localement, mais sauvegarde serveur impossible (${backendErrorMessage}). Réessayez avant de continuer.`
+          : "Position manuelle enregistrée localement, mais sauvegarde serveur impossible. Réessayez avant de continuer.",
         "error"
       );
     }
@@ -7909,7 +7909,7 @@ if (providerCoverageContinueBtn) {
       ? providerCoverageLocationData
       : resolveProviderCoverageLocationFromAccount(account);
     if (!hasProviderCoverageLocation(locationToPersist) || !isProviderCoverageManualLocation(locationToPersist)) {
-      setProviderCoverageFeedback("Coordonnees manuelles manquantes. Choisissez votre position sur la carte.", "error");
+      setProviderCoverageFeedback("Coordonnées manuelles manquantes. Choisissez votre position sur la carte.", "error");
       return;
     }
 
@@ -7923,7 +7923,7 @@ if (providerCoverageContinueBtn) {
       providerCoverageContinueBtn.textContent = previousLabel;
       setProviderCoverageFeedback(
         (error && error.message) ||
-          "Impossible de sauvegarder votre geolocalisation en base. Verifiez le serveur puis reessayez.",
+          "Impossible de sauvegarder votre géolocalisation en base. Vérifiez le serveur puis réessayez.",
         "error"
       );
       return;
@@ -7932,8 +7932,8 @@ if (providerCoverageContinueBtn) {
     const isManualCoverage = isProviderCoverageManualLocation(providerCoverageLocationData);
     setProviderCoverageFeedback(
       isManualCoverage
-        ? "Position manuelle validee. Redirection vers la verification biometrie..."
-        : "Position manuelle validee. Redirection vers la verification biometrie...",
+        ? "Position manuelle validée. Redirection vers la vérification biométrique..."
+        : "Position manuelle validée. Redirection vers la vérification biométrique...",
       "success"
     );
     providerCoverageContinueBtn.textContent = previousLabel;
@@ -7953,8 +7953,8 @@ if (fingerprintCaptureBtn) {
     pendingProviderFingerprintCapture = null;
     syncFingerprintContinueButton(false);
     fingerprintCaptureBtn.disabled = true;
-    fingerprintCaptureBtn.textContent = "Lecture biometrie...";
-    setFingerprintFeedback("Verification biometrie en cours...");
+    fingerprintCaptureBtn.textContent = "Lecture biométrique...";
+    setFingerprintFeedback("Vérification biométrique en cours...");
 
     try {
       let account = resolveProviderForFingerprintAccessFromLocalState();
@@ -7962,17 +7962,17 @@ if (fingerprintCaptureBtn) {
         account = await resolveProviderForFingerprintAccess();
       }
       if (!account) {
-        throw new Error("Aucun compte prestataire trouve. Reprenez l'inscription.");
+        throw new Error("Aucun compte prestataire trouvé. Reprenez l'inscription.");
       }
 
       const providerStatus = normalizeStatus(account.statutVerification || "");
       if (!canProviderContinueAfterAdminApproval(providerStatus, account)) {
-        throw new Error("Votre profil prestataire doit etre approuve par l'administrateur avant de continuer.");
+        throw new Error("Votre profil prestataire doit être approuvé par l'administrateur avant de continuer.");
       }
 
       if (!isProviderCoverageManualReady(account)) {
         setFingerprintFeedback(
-          "Position manuelle obligatoire: validez votre champ de prestation avant la verification biometrie."
+          "Position manuelle obligatoire : validez votre champ de prestation avant la vérification biométrique."
         );
         previousPageClass = "page7";
         goTo("page30");
@@ -7981,7 +7981,7 @@ if (fingerprintCaptureBtn) {
 
       const fingerprintCapture = await captureDeviceFingerprint(account);
       if (!fingerprintCapture || !fingerprintCapture.hash) {
-        throw new Error("Impossible de generer la verification biometrie (Face ID / empreinte).");
+        throw new Error("Impossible de générer la vérification biométrique (Face ID / empreinte).");
       }
 
       pendingProviderFingerprintCapture = {
@@ -7993,7 +7993,7 @@ if (fingerprintCaptureBtn) {
 
       if (pendingProviderFingerprintCapture.mode === "biometric") {
         setFingerprintFeedback(
-          "Biometrie detectee (Face ID / empreinte). Donnees chiffrees et protegees. Cliquez sur Continuer pour finaliser."
+          "Biométrie détectée (Face ID / empreinte). Données chiffrées et protégées. Cliquez sur Continuer pour finaliser."
         );
       } else {
         const fallbackReason = getFingerprintFallbackReasonText(pendingProviderFingerprintCapture.reason);
@@ -8002,7 +8002,7 @@ if (fingerprintCaptureBtn) {
 
       syncFingerprintContinueButton(true);
     } catch (error) {
-      setFingerprintFeedback((error && error.message) || "Impossible de verifier votre biometrie.");
+      setFingerprintFeedback((error && error.message) || "Impossible de vérifier votre biométrie.");
     } finally {
       fingerprintCaptureBtn.disabled = false;
       fingerprintCaptureBtn.textContent = previousLabel;
@@ -8026,7 +8026,7 @@ if (fingerprintContinueBtn) {
     if (fingerprintCaptureBtn) {
       fingerprintCaptureBtn.disabled = true;
     }
-    setFingerprintFeedback("Validation finale biometrie en cours...");
+    setFingerprintFeedback("Validation finale biométrique en cours...");
 
     try {
       let account = resolveProviderForFingerprintAccessFromLocalState();
@@ -8034,17 +8034,17 @@ if (fingerprintContinueBtn) {
         account = await resolveProviderForFingerprintAccess();
       }
       if (!account) {
-        throw new Error("Aucun compte prestataire trouve. Reprenez l'inscription.");
+        throw new Error("Aucun compte prestataire trouvé. Reprenez l'inscription.");
       }
 
       const providerStatus = normalizeStatus(account.statutVerification || "");
       if (!canProviderContinueAfterAdminApproval(providerStatus, account)) {
-        throw new Error("Votre profil prestataire doit etre approuve par l'administrateur avant de continuer.");
+        throw new Error("Votre profil prestataire doit être approuvé par l'administrateur avant de continuer.");
       }
 
       if (!isProviderCoverageManualReady(account)) {
         setFingerprintFeedback(
-          "Position manuelle obligatoire: validez votre champ de prestation avant la verification biometrie."
+          "Position manuelle obligatoire : validez votre champ de prestation avant la vérification biométrique."
         );
         previousPageClass = "page7";
         goTo("page30");
@@ -8053,10 +8053,10 @@ if (fingerprintContinueBtn) {
 
       let locationData = resolveProviderCoverageLocationFromAccount(account);
       if (!hasProviderCoverageLocation(locationData) || !isProviderCoverageManualLocation(locationData)) {
-        throw new Error("Position manuelle introuvable. Retournez a l'etape precedente pour la definir.");
+        throw new Error("Position manuelle introuvable. Retournez à l'étape précédente pour la définir.");
       }
 
-      setFingerprintFeedback("Empreinte validee. Enregistrement securise en cours...");
+      setFingerprintFeedback("Empreinte validée. Enregistrement sécurisé en cours...");
 
       const payload = await submitPrestataireFingerprintCapture(
         account,
@@ -8098,7 +8098,7 @@ if (fingerprintContinueBtn) {
 
       pendingProviderFingerprintCapture = null;
       syncFingerprintContinueButton(false);
-      setFingerprintFeedback("Empreinte enregistree de maniere securisee. Redirection vers l'application...");
+      setFingerprintFeedback("Empreinte enregistrée de manière sécurisée. Redirection vers l'application...");
 
       previousPageClass = "page7";
       goTo(targetAppPage);
@@ -8227,7 +8227,7 @@ if (submitProviderVerificationBtn) {
         statutVerification: "en_attente"
       });
       savePendingVerification("prestataire", email);
-      setProviderFeedback("Votre dossier est envoye. Statut: en attente de verification admin.", "success");
+      setProviderFeedback("Votre dossier est envoyé. Statut : en attente de vérification admin.", "success");
 
       if (providerLastNameInput) providerLastNameInput.value = "";
       if (providerFirstNameInput) providerFirstNameInput.value = "";

@@ -103,36 +103,36 @@ async function sendProviderOrderNotification(payload = {}) {
   const createdAtLabel = Number.isNaN(createdAt.getTime()) ? "-" : createdAt.toLocaleString("fr-FR");
   const orderId = String(payload.orderId || "").trim() || "-";
 
-  const subject = "Nouvelle demande client confirmee";
+  const subject = "Nouvelle demande client confirmée";
   const text = [
     `Bonjour ${providerName},`,
     "",
-    "Une nouvelle demande client vient d'etre confirmee sur ProxyServices.",
+    "Une nouvelle demande client vient d'être confirmée sur ProxyServices.",
     `Commande: ${orderId}`,
     `Client: ${clientName}`,
     `Service: ${service}`,
     `Paiement: ${paymentLabel}`,
     `Distance: ${distanceLabel}`,
-    `Supplement distance: ${distancePriceLabel}`,
+    `Supplément distance: ${distancePriceLabel}`,
     `Date: ${createdAtLabel}`,
     "",
-    "Connectez-vous a votre espace prestataire pour voir les details."
+    "Connectez-vous à votre espace prestataire pour voir les détails."
   ].join("\n");
 
   const html = `
     <div style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.45">
       <p>Bonjour <strong>${providerName}</strong>,</p>
-      <p>Une nouvelle demande client vient d'etre confirmee sur ProxyServices.</p>
+      <p>Une nouvelle demande client vient d'être confirmée sur ProxyServices.</p>
       <table cellpadding="6" cellspacing="0" border="0" style="border-collapse:collapse">
         <tr><td><strong>Commande</strong></td><td>${orderId}</td></tr>
         <tr><td><strong>Client</strong></td><td>${clientName}</td></tr>
         <tr><td><strong>Service</strong></td><td>${service}</td></tr>
         <tr><td><strong>Paiement</strong></td><td>${paymentLabel}</td></tr>
         <tr><td><strong>Distance</strong></td><td>${distanceLabel}</td></tr>
-        <tr><td><strong>Supplement distance</strong></td><td>${distancePriceLabel}</td></tr>
+        <tr><td><strong>Supplément distance</strong></td><td>${distancePriceLabel}</td></tr>
         <tr><td><strong>Date</strong></td><td>${createdAtLabel}</td></tr>
       </table>
-      <p>Connectez-vous a votre espace prestataire pour voir les details.</p>
+      <p>Connectez-vous à votre espace prestataire pour voir les détails.</p>
     </div>
   `;
 
@@ -163,4 +163,3 @@ async function sendProviderOrderNotification(payload = {}) {
 module.exports = {
   sendProviderOrderNotification
 };
-
