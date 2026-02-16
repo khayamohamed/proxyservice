@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: proxyservices-app
+    env: node
+    rootDir: express-mongo-backend
+    plan: free
+    autoDeploy: true
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: USE_IN_MEMORY_MONGO
+        value: "false"
+      - key: MONGO_URI
+        sync: false
+      - key: BLOCKCHAIN_REQUIRED
+        value: "false"

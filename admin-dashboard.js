@@ -1,6 +1,9 @@
 const DEFAULT_API_BASE = "http://localhost:5000";
 const API_BASE_STORAGE_KEYS = ["proxyservices_admin_api_base"];
 const API_REQUEST_TIMEOUT_MS = 12000;
+const ADMIN_SESSION_STORAGE_KEY = "proxyservices_admin_session";
+const ADMIN_ALLOWED_IDENTIFIER = "admin123";
+const ADMIN_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 const state = {
   apiBase: DEFAULT_API_BASE,
@@ -36,6 +39,68 @@ const elements = {
   fpRecordedAt: document.getElementById("fp-recorded-at"),
   fpLocation: document.getElementById("fp-location")
 };
+
+function buildLoginPageUrl() {
+  if (!window.location || window.location.protocol === "file:" || !window.location.host) {
+    return "./index.html";
+  }
+
+  return `${window.location.protocol}//${window.location.host}/index.html`;
+}
+
+function getStoredAdminSession() {
+  try {
+    const raw = localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function clearStoredAdminSession() {
+  try {
+    localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+  } catch (error) {
+    // noop
+  }
+}
+
+function hasValidAdminSession() {
+  const session = getStoredAdminSession();
+  if (!session) {
+    return false;
+  }
+
+  const identifier = String(session.email || "").trim().toLowerCase();
+  if (identifier !== ADMIN_ALLOWED_IDENTIFIER) {
+    clearStoredAdminSession();
+    return false;
+  }
+
+  const expiresAt = Number(session.expiresAt);
+  if (Number.isFinite(expiresAt) && expiresAt > Date.now()) {
+    return true;
+  }
+
+  const issuedAt = Number(session.issuedAt);
+  if (Number.isFinite(issuedAt) && Date.now() - issuedAt < ADMIN_SESSION_MAX_AGE_MS) {
+    return true;
+  }
+
+  clearStoredAdminSession();
+  return false;
+}
+
+function ensureAdminAccessOrRedirect() {
+  if (hasValidAdminSession()) {
+    return true;
+  }
+
+  window.location.replace(buildLoginPageUrl());
+  return false;
+}
 
 function buildLocalApiBaseCandidates(startPort = 5000, endPort = 5010) {
   const values = [];
@@ -898,6 +963,10 @@ function setupEvents() {
 }
 
 async function init() {
+  if (!ensureAdminAccessOrRedirect()) {
+    return;
+  }
+
   const globalApiBase = typeof window.PROXY_API_BASE_URL === "string" ? window.PROXY_API_BASE_URL : "";
   state.apiBase = getCurrentOriginApiBase() || normalizeApiBase(globalApiBase) || getStoredApiBase() || DEFAULT_API_BASE;
 

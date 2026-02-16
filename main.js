@@ -366,6 +366,9 @@ const DEFAULT_PROVIDER_API_BASES = buildLocalApiBaseCandidates();
 const API_REQUEST_TIMEOUT_MS = 12000;
 const PENDING_VERIFICATION_STORAGE_KEY = "proxyservices_pending_verification";
 const PENDING_VERIFICATION_STATUSES = ["en_attente"];
+const ADMIN_SESSION_STORAGE_KEY = "proxyservices_admin_session";
+const ADMIN_LOGIN_IDENTIFIER = "admin123";
+const ADMIN_LOGIN_PASSWORD = "admin123";
 const CLIENT_ACCOUNT_STORAGE_KEY = "proxyservices_client_accounts";
 const PROVIDER_ACCOUNT_STORAGE_KEY = "proxyservices_provider_accounts";
 const ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY = "proxyservices_active_client_account";
@@ -445,6 +448,42 @@ const DEFAULT_PROVIDER_COVERAGE_CENTER = {
   accuracy: null,
   locationLabel: "manual_default"
 };
+
+function normalizeAdminIdentifier(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isAdminCredentials(identifier, password) {
+  return (
+    normalizeAdminIdentifier(identifier) === ADMIN_LOGIN_IDENTIFIER &&
+    String(password || "") === ADMIN_LOGIN_PASSWORD
+  );
+}
+
+function buildAdminDashboardUrl() {
+  if (!window.location || window.location.protocol === "file:" || !window.location.host) {
+    return "./admin-dashboard.html";
+  }
+
+  return `${window.location.protocol}//${window.location.host}/admin-dashboard.html`;
+}
+
+function saveAdminSession(identifier) {
+  const normalizedIdentifier = normalizeAdminIdentifier(identifier);
+  const nowMs = Date.now();
+  const payload = {
+    email: normalizedIdentifier,
+    role: "admin",
+    issuedAt: nowMs,
+    expiresAt: nowMs + 12 * 60 * 60 * 1000
+  };
+
+  try {
+    localStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    // noop
+  }
+}
 
 function normalizeApiBase(url) {
   return String(url || "").trim().replace(/\/+$/, "");
@@ -2108,6 +2147,7 @@ function performLogoutAndReturnToStart() {
   try {
     localStorage.removeItem(ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY);
     localStorage.removeItem(ACTIVE_PROVIDER_ACCOUNT_STORAGE_KEY);
+    localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
   } catch (error) {
     // noop
   }
@@ -6136,6 +6176,22 @@ if (loginBtn) {
 
     if (!email || !password) {
       setLoginFeedback("Entre ton email et ton mot de passe.", "error");
+      return;
+    }
+
+    if (isAdminCredentials(email, password)) {
+      clearPendingVerification();
+      try {
+        localStorage.removeItem(ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY);
+        localStorage.removeItem(ACTIVE_PROVIDER_ACCOUNT_STORAGE_KEY);
+      } catch (error) {
+        // noop
+      }
+      saveAdminSession(email);
+      setLoginFeedback("Connexion admin reussie. Redirection...", "success");
+      window.setTimeout(() => {
+        window.location.href = buildAdminDashboardUrl();
+      }, 180);
       return;
     }
 
