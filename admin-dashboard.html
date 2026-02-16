@@ -1,0 +1,133 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Admin - ProxyServices</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="admin-dashboard.css">
+</head>
+<body>
+  <div class="db-shell">
+    <header class="db-header">
+      <div>
+        <p class="db-kicker">Administration</p>
+        <h1>Verification prestataires</h1>
+        <p class="db-subtitle">Validation entretien, fingerprint blockchain, suivi clients et commandes.</p>
+      </div>
+    </header>
+
+    <section class="stats-grid" id="stats-grid"></section>
+
+    <section class="layout-grid">
+      <article class="panel panel-wide">
+        <div class="panel-head">
+          <h2>Prestataires (historique complet)</h2>
+          <span id="pending-count" class="tag">0 element</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Infos prestataire</th>
+                <th>Statut</th>
+                <th>Documents</th>
+                <th>Actions admin</th>
+              </tr>
+            </thead>
+            <tbody id="pending-body"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Clients (verification majeure + CIN)</h2>
+          <span id="clients-count" class="tag">0 client</span>
+        </div>
+        <div class="table-wrap compact">
+          <table>
+            <thead>
+              <tr>
+                <th>Nom</th>
+                <th>Email</th>
+                <th>Telephone</th>
+                <th>Date naissance</th>
+                <th>Age</th>
+                <th>Statut</th>
+                <th>CIN (photo)</th>
+                <th>Blockchain (ID/TX)</th>
+                <th>Actions admin</th>
+              </tr>
+            </thead>
+            <tbody id="clients-body"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head row">
+          <h2>Apercu cote client</h2>
+          <form id="provider-filter-form" class="inline-form">
+            <input id="provider-categorie" type="text" placeholder="Filtrer categorie...">
+            <button class="btn btn-small" type="submit">Filtrer</button>
+          </form>
+        </div>
+
+        <div id="visible-providers" class="list-grid"></div>
+      </article>
+
+      <article class="panel panel-wide">
+        <div class="panel-head">
+          <h2>Commandes (historique complet)</h2>
+          <span id="orders-count" class="tag">0 commande</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Client</th>
+                <th>Prestataire</th>
+                <th>Distance</th>
+                <th>Tarif distance</th>
+                <th>Paiement</th>
+                <th>Statut</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="orders-body"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <aside id="toast" class="toast" hidden></aside>
+
+    <div id="fingerprint-modal" class="modal" hidden>
+      <button id="fingerprint-modal-backdrop" class="modal-backdrop" type="button" aria-label="Fermer"></button>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="fingerprint-modal-title">
+        <div class="modal-head">
+          <h3 id="fingerprint-modal-title">Infos fingerprint</h3>
+          <button id="fingerprint-modal-close" class="btn btn-small btn-secondary" type="button">Fermer</button>
+        </div>
+        <div class="fingerprint-info-grid">
+          <p><strong>Prestataire:</strong> <span id="fp-provider-name">-</span></p>
+          <p><strong>Email:</strong> <span id="fp-provider-email">-</span></p>
+          <p><strong>Statut:</strong> <span id="fp-provider-status">-</span></p>
+          <p><strong>Hash:</strong> <span id="fp-hash">-</span></p>
+          <p><strong>Transaction:</strong> <span id="fp-tx">-</span></p>
+          <p><strong>Reseau:</strong> <span id="fp-network">-</span></p>
+          <p><strong>Mode:</strong> <span id="fp-mode">-</span></p>
+          <p><strong>Date:</strong> <span id="fp-recorded-at">-</span></p>
+          <p><strong>Geo:</strong> <span id="fp-location">-</span></p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="admin-dashboard.js?v=20260216-17"></script>
+</body>
+</html>

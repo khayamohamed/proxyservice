@@ -1,0 +1,9 @@
+﻿node_modules
+.env
+uploads/*
+!uploads/prestataires/
+!uploads/prestataires/cin/
+!uploads/prestataires/casier/
+!uploads/clients/
+!uploads/clients/cin/
+!uploads/**/.gitkeep
