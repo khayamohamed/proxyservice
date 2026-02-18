@@ -5,14 +5,20 @@ services:
     rootDir: express-mongo-backend
     plan: free
     autoDeploy: true
-    buildCommand: npm install
+    buildCommand: npm install --omit=dev --no-audit --no-fund
     startCommand: npm start
     healthCheckPath: /health
     envVars:
+      - key: NODE_VERSION
+        value: "20"
       - key: NODE_ENV
         value: production
+      - key: USE_HTTPS
+        value: "false"
       - key: USE_IN_MEMORY_MONGO
         value: "false"
+      - key: MONGOMS_DISABLE_POSTINSTALL
+        value: "true"
       - key: MONGO_URI
         sync: false
       - key: BLOCKCHAIN_REQUIRED
