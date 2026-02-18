@@ -11,6 +11,7 @@ const clientSchema = new mongoose.Schema(
     dateDeNaissance: { type: Date, default: null },
     age: { type: Number, default: null },
     cinImage: { type: String, required: true, trim: true },
+    photoProfil: { type: String, default: "", trim: true },
     deviceFingerprintHash: { type: String, default: null, trim: true },
     location: {
       type: {

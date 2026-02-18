@@ -1,8 +1,30 @@
-function goTo(pageClass) {
+﻿function goTo(pageClass) {
   if (pageClass === "page25" && hasValidatedProviderSession()) {
     pageClass = "page8";
   }
+  if (pageClass === "page8") {
+    const activeClientAccount = getActiveClientAccount();
+    const activeClientEmail = String((activeClientAccount && activeClientAccount.email) || "").trim().toLowerCase();
+    const activeClientStatus = normalizeStatus(
+      (activeClientAccount && activeClientAccount.statutVerification) || "en_attente"
+    );
+    if (activeClientEmail && !canClientContinueAfterAdminApproval(activeClientStatus, activeClientAccount)) {
+      savePendingVerification("client", activeClientEmail);
+      showSubmissionWaitingPage("client", activeClientStatus || "en_attente");
+      return;
+    }
+  }
+  if (pageClass === "page33" && !ORDER_CHAT_ENABLED) {
+    pageClass = resolveActiveProfileTypeForChat() === "prestataire" ? "page10" : "page19";
+  }
+  if (pageClass === "page19" && resolveActiveProfileTypeForChat() === "prestataire") {
+    pageClass = "page10";
+  }
+  if (pageClass !== "page16") {
+    activeSupportParticipantContext = null;
+  }
 
+  stopSupportChatPolling();
   closePage8Overlay();
   closePage8NotifOverlay();
   closePage14Overlay();
@@ -12,6 +34,7 @@ function goTo(pageClass) {
   closePage18AddressOverlay();
   closeLogoutConfirmOverlay();
   closeProviderApprovedPopup();
+  closeOrderChatModal();
   document.querySelectorAll(".screen").forEach((screen) => {
     screen.classList.remove("active");
   });
@@ -21,6 +44,12 @@ function goTo(pageClass) {
     target.classList.add("active");
     window.scrollTo(0, 0);
     fitScreen(target);
+    const activeRoleForSession = resolveActiveProfileTypeForChat();
+    if (activeRoleForSession === "client" || activeRoleForSession === "prestataire") {
+      setActiveProfileRole(activeRoleForSession);
+      lastResolvedProfileType = activeRoleForSession;
+      saveLastVisitedPageForRole(activeRoleForSession, pageClass);
+    }
     if (pageClass === "page18") {
       applyCurrentOrderDemandSummary();
       applyCurrentOrderTrackingSummary();
@@ -30,8 +59,19 @@ function goTo(pageClass) {
     }
     if (pageClass === "page20") {
       applyCurrentOrderTrackingSummary();
+      syncPage20ChatFabState();
+      syncChatUnreadBadges().catch(() => {
+        return;
+      });
       renderPage20GoogleMapWithFallback().catch(() => {
         setPage20MapPlaceholder("Carte indisponible pour le moment.", "error");
+      });
+    }
+    if (pageClass === "page19") {
+      applyPage19RequestDateTime();
+      syncPage19ChatFabState();
+      syncChatUnreadBadges().catch(() => {
+        return;
       });
     }
     if (pageClass === "page31") {
@@ -43,12 +83,34 @@ function goTo(pageClass) {
       resetClientInterventionReviewStepUi();
     }
     if (pageClass === "page10") {
+      syncRequestHistoryTabsVisibility();
+      syncOngoingRequestsFromBackendForActiveParticipant()
+        .then(() => {
+          renderPage10OngoingRequests();
+        })
+        .catch(() => {
+          return;
+        });
       renderPage10OngoingRequests();
     }
+    if (pageClass === "page8") {
+      syncPage8ChatFabState();
+    }
+    if (isProviderDirectoryPage(pageClass)) {
+      syncVerifiedProviderDirectoryIfVisible(true);
+    }
+    if (pageClass === "page16") {
+      refreshSupportChatMessages().catch(() => {
+        return;
+      });
+      startSupportChatPolling();
+    }
     if (pageClass === "page22") {
+      syncRequestHistoryTabsVisibility();
       renderPage22FinishedRequests();
     }
     if (pageClass === "page23") {
+      syncRequestHistoryTabsVisibility();
       renderPage23CancelledRequests();
     }
     if (pageClass === "page7") {
@@ -105,6 +167,7 @@ const toFrame4Btn = document.getElementById("to-frame-4-btn");
 const loginBtn = document.getElementById("login-btn");
 const loginEmailInput = document.getElementById("login-email");
 const loginPasswordInput = document.getElementById("login-password");
+const loginPasswordToggleBtn = document.getElementById("login-password-toggle-btn");
 const loginFeedback = document.getElementById("login-feedback");
 const toFrame5Btn = document.getElementById("to-frame-5-btn");
 const backTo4Btn = document.getElementById("back-to-4-btn");
@@ -116,6 +179,7 @@ const signupEmailInput = document.getElementById("signup-email-input");
 const signupPhoneInput = document.getElementById("signup-phone-input");
 const signupBirthInput = document.getElementById("signup-birth-input");
 const signupCinUpload = document.getElementById("signup-cin-upload");
+const signupPhotoUpload = document.getElementById("signup-photo-upload");
 const signupFeedback = document.getElementById("signup-feedback");
 const backTo5Btn = document.getElementById("back-to-5-btn");
 const toFrame7Btn = document.getElementById("to-frame-7-btn");
@@ -234,8 +298,14 @@ const selectedPaymentMethodIcon = document.getElementById("selected-payment-meth
 const openPage18Btn = document.getElementById("open-page18-btn");
 const backTo17From18Btn = document.getElementById("back-to-17-from-18-btn");
 const openPage19Btn = document.getElementById("open-page19-btn");
+const backTo18From34Btn = document.getElementById("back-to-18-from-34-btn");
+const openPage19From34Btn = document.getElementById("open-page19-from-34-btn");
 const backTo18From19Btn = document.getElementById("back-to-18-from-19-btn");
 const openPage20Btn = document.getElementById("open-page20-btn");
+const openPage33ChatBtn = document.getElementById("open-page33-chat-btn");
+const openPage20ChatBtn = document.getElementById("open-page20-chat-btn");
+const openPage8ChatBtn = document.getElementById("open-page8-chat-btn");
+const backTo19From33Btn = document.getElementById("back-to-19-from-33-btn");
 const backTo19From20Btn = document.getElementById("back-to-19-from-20-btn");
 const openPage31Btn = document.getElementById("open-page31-btn");
 const backTo20From31Btn = document.getElementById("back-to-20-from-31-btn");
@@ -261,6 +331,7 @@ const page18ProviderZoneCard = document.getElementById("page18-provider-zone-car
 const page18ProviderFieldValue = document.getElementById("page18-provider-field-value");
 const page18ProviderZoneNote = document.getElementById("page18-provider-zone-note");
 const page18ProviderMapElement = document.getElementById("page18-provider-map");
+const page19RequestDatetime = document.getElementById("page19-request-datetime");
 const page20AddressValue = document.getElementById("page20-address-value");
 const page20EtaValue = document.getElementById("page20-eta-value");
 const page20StepAcceptedMin = document.getElementById("page20-step-accepted-min");
@@ -295,6 +366,21 @@ const cancelReasonInput = document.querySelector(".cancel-reason-input");
 const page10OngoingRequestsList = document.getElementById("page10-ongoing-requests-list");
 const page22FinishedRequestsList = document.getElementById("page22-finished-requests-list");
 const page23CancelledRequestsList = document.getElementById("page23-cancelled-requests-list");
+const orderChatOverlay = document.getElementById("order-chat-overlay");
+const orderChatCloseBackdropBtn = document.getElementById("order-chat-close-backdrop-btn");
+const orderChatCloseBtn = document.getElementById("order-chat-close-btn");
+const orderChatMessages = document.getElementById("order-chat-messages");
+const orderChatForm = document.getElementById("order-chat-form");
+const orderChatInput = document.getElementById("order-chat-input");
+const orderChatSendBtn = document.getElementById("order-chat-send-btn");
+const orderChatFeedback = document.getElementById("order-chat-feedback");
+const page33ChatMessages = document.getElementById("page33-chat-messages");
+const page33ChatForm = document.getElementById("page33-chat-form");
+const page33ChatInput = document.getElementById("page33-chat-input");
+const page33ChatSendBtn = document.getElementById("page33-chat-send-btn");
+const page33ChatFeedback = document.getElementById("page33-chat-feedback");
+const page33ChatAvatar = document.getElementById("page33-chat-avatar");
+const page33ChatSubtitle = document.getElementById("page33-chat-subtitle");
 const page8Overlay = document.getElementById("page8-overlay");
 const page8NotifOverlay = document.getElementById("page8-notif-overlay");
 const notificationsListPage8 = document.getElementById("notifications-list-page8");
@@ -340,10 +426,16 @@ const page15OpenPage10Btn = document.getElementById("page15-open-page10-btn");
 const openPage10From15BottomBtn = document.getElementById("open-page10-from-15-bottom-btn");
 const openPage10From17BottomBtn = document.getElementById("open-page10-from-17-bottom-btn");
 const openPage10From18BottomBtn = document.getElementById("open-page10-from-18-bottom-btn");
+const openPage10From34BottomBtn = document.getElementById("open-page10-from-34-bottom-btn");
 const openPage10From19BottomBtn = document.getElementById("open-page10-from-19-bottom-btn");
 const openPage10From20BottomBtn = document.getElementById("open-page10-from-20-bottom-btn");
 const backFrom16Btn = document.getElementById("back-from-16-btn");
 const openPage16Btns = document.querySelectorAll(".open-page16-btn");
+const supportChatMessages = document.getElementById("support-chat-messages");
+const supportChatInput = document.getElementById("support-chat-input");
+const supportChatSendBtn = document.getElementById("support-chat-send-btn");
+const supportChatForm = document.getElementById("support-chat-form");
+const supportChatFeedback = document.getElementById("support-chat-feedback");
 const openHomeBtns = document.querySelectorAll(".open-home-btn");
 const providerCategoryTriggers = document.querySelectorAll("[data-category-target]");
 const homeCategoryItems = document.querySelectorAll(".page8 .category-item[data-home-category]");
@@ -357,30 +449,56 @@ const API_BASE_STORAGE_KEYS = ["proxyservices_admin_api_base", "proxy_api_base_u
 function buildLocalApiBaseCandidates(startPort = 5000, endPort = 5010) {
   const values = [];
   for (let port = startPort; port <= endPort; port += 1) {
-    values.push(`http://localhost:${port}`, `http://127.0.0.1:${port}`);
+    values.push(
+      `http://localhost:${port}`,
+      `http://127.0.0.1:${port}`,
+      `https://localhost:${port}`,
+      `https://127.0.0.1:${port}`
+    );
   }
   return values;
 }
 
 const DEFAULT_PROVIDER_API_BASES = buildLocalApiBaseCandidates();
 const API_REQUEST_TIMEOUT_MS = 12000;
+const PROVIDER_DIRECTORY_SYNC_INTERVAL_MS = 3500;
 const PENDING_VERIFICATION_STORAGE_KEY = "proxyservices_pending_verification";
 const PENDING_VERIFICATION_STATUSES = ["en_attente"];
 const ADMIN_SESSION_STORAGE_KEY = "proxyservices_admin_session";
-const ADMIN_LOGIN_IDENTIFIER = "admin123";
-const ADMIN_LOGIN_PASSWORD = "admin123";
+const MODERATOR_IDENTIFIERS = ["admin1", "admin2", "admin3", "admin4", "admin5"];
+const ADMIN_CREDENTIALS = {
+  admin123: "admin123",
+  admin1: "admin1",
+  admin2: "admin2",
+  admin3: "admin3",
+  admin4: "admin4",
+  admin5: "admin5"
+};
 const CLIENT_ACCOUNT_STORAGE_KEY = "proxyservices_client_accounts";
 const PROVIDER_ACCOUNT_STORAGE_KEY = "proxyservices_provider_accounts";
 const ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY = "proxyservices_active_client_account";
 const ACTIVE_PROVIDER_ACCOUNT_STORAGE_KEY = "proxyservices_active_provider_account";
+const ACTIVE_PROFILE_ROLE_STORAGE_KEY = "proxyservices_active_profile_role";
+const LAST_CLIENT_PAGE_STORAGE_KEY = "proxyservices_last_client_page";
+const LAST_PROVIDER_PAGE_STORAGE_KEY = "proxyservices_last_provider_page";
+const PROVIDER_CONTEXT_PAGES = new Set(["page10", "page14", "page15", "page17", "page30"]);
+const CLIENT_CONTEXT_PAGES = new Set(["page8", "page9", "page18", "page19", "page20", "page22", "page23", "page24", "page34"]);
 const VERIFIED_PROVIDER_DIRECTORY_STORAGE_KEY = "proxyservices_verified_provider_directory";
 const WEBAUTHN_CREDENTIALS_STORAGE_KEY = "proxyservices_webauthn_credentials";
 const CLIENT_ONGOING_REQUESTS_STORAGE_KEY = "proxyservices_client_ongoing_requests";
+const ORDER_CHAT_LOCAL_STORAGE_KEY = "proxyservices_order_chat_messages";
+const ORDER_CHAT_LAST_SEEN_STORAGE_KEY = "proxyservices_order_chat_last_seen";
+const SUPPORT_CHAT_LOCAL_STORAGE_KEY = "proxyservices_support_chat_messages";
 const CLIENT_NOTIFICATIONS_STORAGE_KEY = "proxyservices_client_notifications";
 const PROVIDER_NOTIFICATIONS_STORAGE_KEY = "proxyservices_provider_notifications";
-const DEFAULT_PROVIDER_CARD_IMAGE = "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/mdpghlrl_expires_30_days.png";
+const DEFAULT_PROVIDER_CARD_IMAGE = "./avatar-placeholder.svg";
 const DEFAULT_PROVIDER_PAYMENT_METHOD = "carte_bancaire";
 const DEFAULT_ORDER_ADDRESS_LABEL = "Nahda";
+const DEFAULT_ORDER_SERVICE_COORDINATES = {
+  latitude: 27.14928,
+  longitude: -13.19527
+};
+const ORDER_CHAT_ENABLED = true;
 const DEFAULT_ORDER_ETA_MINUTES = 25;
 const AVERAGE_PROVIDER_SPEED_KMH = 50;
 const ETA_EXTRA_BUFFER_MINUTES = 8;
@@ -402,18 +520,25 @@ let pendingProviderFingerprintCapture = null;
 let pendingProviderIdentityCapture = null;
 let selectedClientInterventionWorkDone = "";
 let selectedClientInterventionRating = 0;
-const DEFAULT_USER_AVATAR_URL = "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/svps67bm_expires_30_days.png";
+let activeOrderChatRequestId = "";
+let activeOrderChatPollTimer = null;
+let chatBadgePollTimer = null;
+let providerDirectoryPollTimer = null;
+let activeOrderChatParticipant = null;
+let activeOrderChatReturnPage = "page19";
+let lastPaidRequestTimestamp = "";
+let supportChatPollTimer = null;
+let supportChatLastRenderedAt = 0;
+let supportChatCachedMessages = [];
+let activeSupportParticipantContext = null;
+const DEFAULT_USER_AVATAR_URL = "./avatar-placeholder.svg";
+const LEGACY_SEED_PROFILE_PHOTOS = new Set([
+  "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/svps67bm_expires_30_days.png",
+  "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/mdpghlrl_expires_30_days.png"
+]);
 let currentOrderProviderProfile = null;
 let selectedProviderPaymentMethod = DEFAULT_PROVIDER_PAYMENT_METHOD;
-let currentOrderTracking = {
-  addressLabel: DEFAULT_ORDER_ADDRESS_LABEL,
-  distanceKm: null,
-  calculatedPriceDh: null,
-  latitude: null,
-  longitude: null,
-  addressSource: "default",
-  addressConfirmed: false
-};
+let currentOrderTracking = buildDefaultOrderTrackingState();
 let page20MapInstance = null;
 let page20MapProviderMarker = null;
 let page20MapArrivedMarker = null;
@@ -443,37 +568,149 @@ let providerCoverageMapClickListener = null;
 let providerCoverageManualPickMode = false;
 let providerCoverageGoogleMapUnavailable = false;
 const DEFAULT_PROVIDER_COVERAGE_CENTER = {
-  latitude: 27.15361,
-  longitude: -13.20333,
+  latitude: 27.14867,
+  longitude: -13.19321,
   accuracy: null,
   locationLabel: "manual_default"
 };
+
+function isValidPageClass(value) {
+  const page = String(value || "").trim();
+  if (!/^page\d+$/.test(page)) {
+    return false;
+  }
+  return Boolean(document.querySelector(`.screen.${page}`));
+}
+
+function getLastVisitedPageForRole(role) {
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  const storageKey =
+    normalizedRole === "client"
+      ? LAST_CLIENT_PAGE_STORAGE_KEY
+      : normalizedRole === "prestataire"
+        ? LAST_PROVIDER_PAGE_STORAGE_KEY
+        : "";
+  if (!storageKey) {
+    return "";
+  }
+
+  try {
+    const value = localStorage.getItem(storageKey);
+    return isValidPageClass(value) ? String(value).trim() : "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function saveLastVisitedPageForRole(role, pageClass) {
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  const normalizedPage = String(pageClass || "").trim();
+  if (!isValidPageClass(normalizedPage)) {
+    return;
+  }
+
+  const isOnboardingOrAuth = /^page([1-7]|25|26|27|28|29)$/.test(normalizedPage);
+  if (isOnboardingOrAuth) {
+    return;
+  }
+  if (normalizedRole === "prestataire" && normalizedPage === "page19") {
+    return;
+  }
+
+  const storageKey =
+    normalizedRole === "client"
+      ? LAST_CLIENT_PAGE_STORAGE_KEY
+      : normalizedRole === "prestataire"
+        ? LAST_PROVIDER_PAGE_STORAGE_KEY
+        : "";
+  if (!storageKey) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(storageKey, normalizedPage);
+  } catch (error) {
+    return;
+  }
+}
+
+function setActiveProfileRole(role) {
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  if (normalizedRole !== "client" && normalizedRole !== "prestataire") {
+    return;
+  }
+  try {
+    localStorage.setItem(ACTIVE_PROFILE_ROLE_STORAGE_KEY, normalizedRole);
+  } catch (error) {
+    return;
+  }
+}
+
+function getActiveProfileRole() {
+  try {
+    const raw = String(localStorage.getItem(ACTIVE_PROFILE_ROLE_STORAGE_KEY) || "")
+      .trim()
+      .toLowerCase();
+    if (raw === "client" || raw === "prestataire") {
+      return raw;
+    }
+  } catch (error) {
+    return "";
+  }
+  return "";
+}
+
+function resolveProfileRoleFromPageClass(pageClass) {
+  const normalizedPage = String(pageClass || "").trim();
+  if (!normalizedPage) {
+    return "";
+  }
+  if (PROVIDER_CONTEXT_PAGES.has(normalizedPage)) {
+    return "prestataire";
+  }
+  if (CLIENT_CONTEXT_PAGES.has(normalizedPage)) {
+    return "client";
+  }
+  return "";
+}
 
 function normalizeAdminIdentifier(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-function isAdminCredentials(identifier, password) {
-  return (
-    normalizeAdminIdentifier(identifier) === ADMIN_LOGIN_IDENTIFIER &&
-    String(password || "") === ADMIN_LOGIN_PASSWORD
-  );
+function isModeratorIdentifier(identifier) {
+  const normalized = normalizeAdminIdentifier(identifier);
+  return MODERATOR_IDENTIFIERS.includes(normalized);
 }
 
-function buildAdminDashboardUrl() {
+function isAdminCredentials(identifier, password) {
+  const normalized = normalizeAdminIdentifier(identifier);
+  if (!normalized) {
+    return false;
+  }
+  return String(ADMIN_CREDENTIALS[normalized] || "") === String(password || "");
+}
+
+function buildAdminDashboardUrl(identifier = "") {
+  const normalized = normalizeAdminIdentifier(identifier);
+  const isModerator = isModeratorIdentifier(normalized);
+  const path = isModerator ? `/moderator-dashboard-${normalized}.html` : "/admin-dashboard.html";
+
   if (!window.location || window.location.protocol === "file:" || !window.location.host) {
-    return "./admin-dashboard.html";
+    return isModerator ? `./moderator-dashboard-${normalized}.html` : "./admin-dashboard.html";
   }
 
-  return `${window.location.protocol}//${window.location.host}/admin-dashboard.html`;
+  return `${window.location.protocol}//${window.location.host}${path}`;
 }
 
-function saveAdminSession(identifier) {
+function saveAdminSession(identifier, secret = "") {
   const normalizedIdentifier = normalizeAdminIdentifier(identifier);
+  const normalizedSecret = String(secret || "").trim() || normalizedIdentifier;
   const nowMs = Date.now();
   const payload = {
     email: normalizedIdentifier,
-    role: "admin",
+    authSecret: normalizedSecret,
+    role: isModeratorIdentifier(normalizedIdentifier) ? "moderateur" : "admin",
     issuedAt: nowMs,
     expiresAt: nowMs + 12 * 60 * 60 * 1000
   };
@@ -544,6 +781,15 @@ function getApiCandidates() {
   return getProviderApiCandidates();
 }
 
+function isProviderDirectoryPage(pageClass) {
+  const normalizedPage = String(pageClass || "").trim();
+  return normalizedPage === "page8" || normalizedPage === "page14" || normalizedPage === "page15";
+}
+
+function getActivePageClass() {
+  return getPageClassFromElement(document.querySelector(".screen.active")) || "";
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = API_REQUEST_TIMEOUT_MS) {
   if (typeof AbortController !== "function") {
     return fetch(url, options);
@@ -569,6 +815,26 @@ function isNetworkError(error) {
     name === "AbortError" ||
     /failed to fetch|networkerror|load failed|timeout|timed out|abort/i.test(message)
   );
+}
+
+function isRetryableApiCandidateResponse(response, payload = null) {
+  const status = Number((response && response.status) || 0);
+  if (!status) {
+    return false;
+  }
+
+  if (status === 404 || status === 405 || status === 501 || status === 502 || status === 503 || status === 504) {
+    return true;
+  }
+
+  const message = String((payload && payload.message) || "")
+    .trim()
+    .toLowerCase();
+  if (!message) {
+    return false;
+  }
+
+  return message === "route not found." || message === "not found";
 }
 
 function arrayBufferToBase64Url(buffer) {
@@ -980,7 +1246,7 @@ function captureCurrentLocation() {
         } else if (code === 3) {
           errorMessage = "Géolocalisation trop lente. Réessayez ou utilisez la position manuelle.";
         }
-
+       alert(errorMessage);
         resolve({
           latitude: null,
           longitude: null,
@@ -994,11 +1260,22 @@ function captureCurrentLocation() {
   });
 }
 
+function isNullIslandCoordinate(latitude, longitude) {
+  return Math.abs(Number(latitude)) < 0.000001 && Math.abs(Number(longitude)) < 0.000001;
+}
+
 function hasProviderCoverageLocation(locationData) {
+  const latitude = Number(locationData && locationData.latitude);
+  const longitude = Number(locationData && locationData.longitude);
   return Boolean(
     locationData &&
-      Number.isFinite(Number(locationData.latitude)) &&
-      Number.isFinite(Number(locationData.longitude))
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      latitude >= -90 &&
+      latitude <= 90 &&
+      longitude >= -180 &&
+      longitude <= 180 &&
+      !isNullIslandCoordinate(latitude, longitude)
   );
 }
 
@@ -1846,6 +2123,13 @@ function canProviderContinueAfterAdminApproval(status, statusPayload = null) {
   return shouldOpenProviderFingerprintStep("prestataire", normalizedStatus, statusPayload);
 }
 
+function canClientContinueAfterAdminApproval(status, statusPayload = null) {
+  const normalizedStatus = normalizeStatus(
+    status || (statusPayload && statusPayload.statutVerification) || ""
+  );
+  return normalizedStatus === "valide";
+}
+
 function shouldOpenProviderCoverageStep(profileType, status, statusPayload = null) {
   if (String(profileType || "").trim().toLowerCase() !== "prestataire") {
     return false;
@@ -2225,15 +2509,17 @@ function openPage18AddressOverlay() {
     currentOrderTracking.addressLabel = DEFAULT_ORDER_ADDRESS_LABEL;
     currentOrderTracking.distanceKm = null;
     currentOrderTracking.calculatedPriceDh = null;
-    currentOrderTracking.latitude = null;
-    currentOrderTracking.longitude = null;
-    currentOrderTracking.addressSource = "manual";
+    currentOrderTracking.latitude = Number(DEFAULT_ORDER_SERVICE_COORDINATES.latitude);
+    currentOrderTracking.longitude = Number(DEFAULT_ORDER_SERVICE_COORDINATES.longitude);
+    currentOrderTracking.addressSource = "manual_map";
     currentOrderTracking.addressConfirmed = false;
   }
   applyCurrentOrderTrackingSummary();
   syncPage18ConfirmAddressButtonState();
   syncPage18PaymentButtonState();
-  requestManualMapAddressSelection();
+  if (!hasPage18ManualMapAddressSelected()) {
+    requestManualMapAddressSelection();
+  }
 }
 
 function closePage18AddressOverlay() {
@@ -2505,9 +2791,95 @@ function resolveActiveClientInterventionRequestId() {
   return String((ongoingRequests[0] && ongoingRequests[0].id) || "").trim();
 }
 
+function setCurrentOrderProviderEmail(email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) {
+    return;
+  }
+
+  const providerProfile = getCurrentOrderProviderProfile();
+  currentOrderProviderProfile = {
+    ...(providerProfile && typeof providerProfile === "object" ? providerProfile : {}),
+    email: normalizedEmail
+  };
+}
+
+function resolveProviderEmailFromCurrentRequestContext() {
+  const activeClientEmail = getActiveClientEmail();
+  const selectedRequestId = String(selectedOngoingRequestId || "").trim();
+  const tryResolveFromEntry = (entry) => {
+    if (!entry || typeof entry !== "object") {
+      return "";
+    }
+    return resolveProviderEmailForRequest({
+      providerEmail: entry.providerEmail,
+      providerName: entry.providerName,
+      providerDomain: entry.providerDomain
+    });
+  };
+
+  if (activeClientEmail && selectedRequestId) {
+    const selectedEntry = getClientRequestByIdAnyStatus(selectedRequestId, activeClientEmail);
+    const selectedEntryEmail = tryResolveFromEntry(selectedEntry);
+    if (selectedEntryEmail) {
+      setCurrentOrderProviderEmail(selectedEntryEmail);
+      return selectedEntryEmail;
+    }
+  }
+
+  if (activeClientEmail) {
+    const latestEntry = getLatestClientRequestForWaitingFlow(activeClientEmail);
+    const latestEntryEmail = tryResolveFromEntry(latestEntry);
+    if (latestEntryEmail) {
+      if (latestEntry && latestEntry.id) {
+        selectedOngoingRequestId = String(latestEntry.id || "").trim();
+      }
+      setCurrentOrderProviderEmail(latestEntryEmail);
+      return latestEntryEmail;
+    }
+  }
+
+  return "";
+}
+
+async function resolveProviderEmailForClientIdentityVerification() {
+  const providerProfile = getCurrentOrderProviderProfile();
+  const directEmail = String((providerProfile && providerProfile.email) || "").trim().toLowerCase();
+  if (directEmail) {
+    return directEmail;
+  }
+
+  const localRequestEmail = resolveProviderEmailFromCurrentRequestContext();
+  if (localRequestEmail) {
+    return localRequestEmail;
+  }
+
+  try {
+    await syncOngoingRequestsFromBackendForActiveParticipant();
+  } catch (error) {
+    // keep local fallback when backend is temporarily unreachable
+  }
+
+  const syncedRequestEmail = resolveProviderEmailFromCurrentRequestContext();
+  if (syncedRequestEmail) {
+    return syncedRequestEmail;
+  }
+
+  const fallbackByName = resolveProviderEmailForRequest({
+    providerName: providerProfile && providerProfile.name,
+    providerDomain: providerProfile && providerProfile.domain
+  });
+  if (fallbackByName) {
+    setCurrentOrderProviderEmail(fallbackByName);
+    return fallbackByName;
+  }
+
+  return "";
+}
+
 async function resolveProviderForClientIdentityVerification() {
   const providerProfile = getCurrentOrderProviderProfile();
-  const email = String((providerProfile && providerProfile.email) || "").trim().toLowerCase();
+  const email = await resolveProviderEmailForClientIdentityVerification();
   if (!email) {
     throw new Error("Email du prestataire introuvable pour la vérification.");
   }
@@ -2581,6 +2953,19 @@ function setLoginFeedback(message, type = "neutral") {
   }
 }
 
+function normalizeProfilePhotoValue(rawValue) {
+  const value = String(rawValue || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  if (LEGACY_SEED_PROFILE_PHOTOS.has(value.toLowerCase())) {
+    return "";
+  }
+
+  return value;
+}
+
 function getClientAccounts() {
   try {
     const raw = localStorage.getItem(CLIENT_ACCOUNT_STORAGE_KEY);
@@ -2619,7 +3004,8 @@ function upsertClientAccount(account) {
     dateDeNaissance: String(account.dateDeNaissance || "").trim(),
     age: Number.isFinite(Number(account.age)) ? Number(account.age) : null,
     cinImage: String(account.cinImage || "").trim(),
-    photoProfil: String(account.photoProfil || account.photo || account.avatarUrl || "").trim(),
+    photoProfil: normalizeProfilePhotoValue(account.photoProfil || account.photo || account.avatarUrl || ""),
+    statutVerification: String(account.statutVerification || "en_attente").trim().toLowerCase(),
     updatedAt: new Date().toISOString()
   };
   if (hasPassword) {
@@ -2645,22 +3031,48 @@ function findClientAccountByEmail(email) {
   return getClientAccounts().find((item) => String(item.email || "").toLowerCase() === normalizedEmail) || null;
 }
 
-function setActiveClientAccount(account) {
+function setActiveClientAccount(account, options = {}) {
   if (!account || !account.email) {
     return;
   }
 
+  const shouldClearOtherRole = options && options.clearOtherRole === false ? false : true;
+  if (shouldClearOtherRole) {
+    try {
+      localStorage.removeItem(ACTIVE_PROVIDER_ACCOUNT_STORAGE_KEY);
+    } catch (error) {
+      // noop
+    }
+  }
+
   try {
-    localStorage.setItem(ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY, JSON.stringify(account));
+    localStorage.setItem(
+      ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY,
+      JSON.stringify({
+        ...account,
+        photoProfil: normalizeProfilePhotoValue(account.photoProfil || account.photo || account.avatarUrl || "")
+      })
+    );
   } catch (error) {
     return;
+  }
+
+  if (options.persistRole !== false) {
+    setActiveProfileRole("client");
   }
 }
 
 function getActiveClientAccount() {
   try {
     const raw = localStorage.getItem(ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    return {
+      ...parsed,
+      photoProfil: normalizeProfilePhotoValue(parsed.photoProfil || parsed.photo || parsed.avatarUrl || "")
+    };
   } catch (error) {
     return null;
   }
@@ -2672,9 +3084,9 @@ function applyActiveClientProfile() {
     return;
   }
 
-  const fullName = `${account.prenom || ""} ${account.nom || ""}`.trim();
-  if (profileNameInput && fullName) {
-    profileNameInput.value = fullName;
+  const displayName = String(account.nom || "").trim() || String(account.prenom || "").trim();
+  if (profileNameInput && displayName) {
+    profileNameInput.value = displayName;
   }
 
   if (profileEmailInput && account.email) {
@@ -2736,18 +3148,74 @@ function readFileAsDataUrl(file) {
 }
 
 function resolveAccountPhotoSrc(rawPhoto) {
-  const photo = String(rawPhoto || "").trim();
+  const photo = String(rawPhoto || "").trim().replace(/\\/g, "/");
+  const normalizedPhoto = photo.toLowerCase();
+  if (LEGACY_SEED_PROFILE_PHOTOS.has(normalizedPhoto)) {
+    return DEFAULT_USER_AVATAR_URL;
+  }
   if (!photo) {
     return DEFAULT_USER_AVATAR_URL;
   }
 
   if (/^(https?:|data:|blob:|file:)/i.test(photo)) {
+    try {
+      const parsed = new URL(
+        photo,
+        window.location && window.location.href ? window.location.href : "https://localhost"
+      );
+      const pathname = String(parsed.pathname || "").trim();
+      const search = String(parsed.search || "").trim();
+      const isUploadPath = /^\/uploads\//i.test(pathname);
+      const isFrontendHost =
+        window.location && window.location.host
+          ? String(parsed.host || "").toLowerCase() === String(window.location.host || "").toLowerCase()
+          : false;
+
+      // Legacy/stale URLs pointing to frontend host cannot serve backend uploads.
+      if (isUploadPath && isFrontendHost) {
+        const apiBase =
+          getStoredApiBase() ||
+          getApiCandidates().find((candidate) => /^https?:\/\//i.test(String(candidate || ""))) ||
+          "http://localhost:5000";
+        return `${apiBase}${pathname}${search}`;
+      }
+
+      // Keep backend upload URLs as-is to avoid forcing HTTPS on a local HTTP API.
+      if (isUploadPath) {
+        return photo;
+      }
+    } catch (error) {
+      // Ignore URL parsing issues and continue with fallback logic.
+    }
+
+    if (
+      /^http:\/\//i.test(photo) &&
+      window.location &&
+      window.location.protocol === "https:" &&
+      /localhost|127\.0\.0\.1/i.test(photo)
+    ) {
+      return photo.replace(/^http:/i, "https:");
+    }
     return photo;
   }
 
+  const normalizedPath = photo.startsWith("/") ? photo : `/${photo}`;
+  const looksLikeUploadPath = /^\/?(uploads)\//i.test(photo);
+  if (looksLikeUploadPath) {
+    const apiBase =
+      getStoredApiBase() ||
+      getApiCandidates().find((candidate) => /^https?:\/\//i.test(String(candidate || ""))) ||
+      "http://localhost:5000";
+    return `${apiBase}${normalizedPath}`;
+  }
+
   if (photo.startsWith("/")) {
-    const apiBase = getApiCandidates()[0] || getStoredApiBase() || "http://localhost:5000";
-    return `${apiBase}${photo}`;
+    if (window.location && window.location.protocol !== "file:" && window.location.host) {
+      return `${window.location.protocol}//${window.location.host}${normalizedPath}`;
+    }
+
+    const apiBase = getStoredApiBase() || getApiCandidates()[0] || "http://localhost:5000";
+    return `${apiBase}${normalizedPath}`;
   }
 
   return photo;
@@ -2767,6 +3235,10 @@ function applyUserAvatar(rawPhoto) {
 
   avatars.forEach((img) => {
     if (img) {
+      img.onerror = () => {
+        img.onerror = null;
+        img.src = DEFAULT_USER_AVATAR_URL;
+      };
       img.src = src;
     }
   });
@@ -2790,6 +3262,90 @@ function saveProviderAccounts(accounts) {
   }
 }
 
+function sanitizeLegacyProfilePhotosInLocalStorage() {
+  const normalizeEntryPhoto = (entry) => {
+    if (!entry || typeof entry !== "object") {
+      return entry;
+    }
+
+    const nextPhoto = normalizeProfilePhotoValue(entry.photoProfil || entry.photo || entry.avatarUrl || "");
+    return {
+      ...entry,
+      photoProfil: nextPhoto
+    };
+  };
+
+  const clients = getClientAccounts().map((entry) => normalizeEntryPhoto(entry));
+  saveClientAccounts(clients);
+
+  const providers = getProviderAccounts().map((entry) => normalizeEntryPhoto(entry));
+  saveProviderAccounts(providers);
+
+  const activeClient = getActiveClientAccount();
+  if (activeClient && activeClient.email) {
+    setActiveClientAccount(activeClient, { persistRole: false, clearOtherRole: false });
+  }
+
+  const activeProvider = getActiveProviderAccount();
+  if (activeProvider && activeProvider.email) {
+    setActiveProviderAccount(activeProvider, { persistRole: false, clearOtherRole: false });
+  }
+
+  const nextRequests = getAllClientOngoingRequests().map((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return entry;
+    }
+    const providerImage = String(entry.providerImage || "").trim();
+    if (LEGACY_SEED_PROFILE_PHOTOS.has(providerImage.toLowerCase())) {
+      return {
+        ...entry,
+        providerImage: DEFAULT_PROVIDER_CARD_IMAGE
+      };
+    }
+    return entry;
+  });
+  saveAllClientOngoingRequests(nextRequests);
+}
+
+function enforceExclusiveActiveSession() {
+  const activeClient = getActiveClientAccount();
+  const activeProvider = getActiveProviderAccount();
+
+  if (activeClient && !activeProvider) {
+    setActiveProfileRole("client");
+    return;
+  }
+  if (activeProvider && !activeClient) {
+    setActiveProfileRole("prestataire");
+    return;
+  }
+  if (!activeClient || !activeProvider) {
+    return;
+  }
+
+  const explicitRole = getActiveProfileRole();
+  let roleToKeep = explicitRole === "client" || explicitRole === "prestataire" ? explicitRole : "";
+  if (!roleToKeep) {
+    const clientStamp =
+      Date.parse(String(activeClient.updatedAt || activeClient.createdAt || activeClient.lastLoginAt || "")) || 0;
+    const providerStamp =
+      Date.parse(String(activeProvider.updatedAt || activeProvider.createdAt || activeProvider.lastLoginAt || "")) || 0;
+    roleToKeep = providerStamp > clientStamp ? "prestataire" : "client";
+  }
+
+  try {
+    if (roleToKeep === "client") {
+      localStorage.removeItem(ACTIVE_PROVIDER_ACCOUNT_STORAGE_KEY);
+    } else {
+      localStorage.removeItem(ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY);
+    }
+  } catch (error) {
+    // noop
+  }
+
+  setActiveProfileRole(roleToKeep);
+}
+
 function upsertProviderAccount(account) {
   if (!account || !account.email) {
     return;
@@ -2810,7 +3366,7 @@ function upsertProviderAccount(account) {
     categorie: String(account.categorie || account.domaine || "").trim(),
     domaine: String(account.domaine || account.categorie || "").trim(),
     experience: String(account.experience || "").trim(),
-    photoProfil: String(account.photoProfil || "").trim(),
+    photoProfil: normalizeProfilePhotoValue(account.photoProfil || account.photo || account.avatarUrl || ""),
     statutVerification: String(account.statutVerification || "en_attente").trim().toLowerCase(),
     fingerprintCaptured:
       typeof account.fingerprintCaptured === "boolean"
@@ -2872,22 +3428,48 @@ function findProviderAccountByEmail(email) {
   return getProviderAccounts().find((item) => String(item.email || "").toLowerCase() === normalizedEmail) || null;
 }
 
-function setActiveProviderAccount(account) {
+function setActiveProviderAccount(account, options = {}) {
   if (!account || !account.email) {
     return;
   }
 
+  const shouldClearOtherRole = options && options.clearOtherRole === false ? false : true;
+  if (shouldClearOtherRole) {
+    try {
+      localStorage.removeItem(ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY);
+    } catch (error) {
+      // noop
+    }
+  }
+
   try {
-    localStorage.setItem(ACTIVE_PROVIDER_ACCOUNT_STORAGE_KEY, JSON.stringify(account));
+    localStorage.setItem(
+      ACTIVE_PROVIDER_ACCOUNT_STORAGE_KEY,
+      JSON.stringify({
+        ...account,
+        photoProfil: normalizeProfilePhotoValue(account.photoProfil || account.photo || account.avatarUrl || "")
+      })
+    );
   } catch (error) {
     return;
+  }
+
+  if (options.persistRole !== false) {
+    setActiveProfileRole("prestataire");
   }
 }
 
 function getActiveProviderAccount() {
   try {
     const raw = localStorage.getItem(ACTIVE_PROVIDER_ACCOUNT_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    return {
+      ...parsed,
+      photoProfil: normalizeProfilePhotoValue(parsed.photoProfil || parsed.photo || parsed.avatarUrl || "")
+    };
   } catch (error) {
     return null;
   }
@@ -2908,9 +3490,9 @@ function applyActiveProviderProfile() {
     return false;
   }
 
-  const fullName = `${account.prenom || ""} ${account.nom || ""}`.trim();
-  if (profileNameInput && fullName) {
-    profileNameInput.value = fullName;
+  const displayName = String(account.nom || "").trim() || String(account.prenom || "").trim();
+  if (profileNameInput && displayName) {
+    profileNameInput.value = displayName;
   }
 
   if (profileEmailInput && account.email) {
@@ -2921,7 +3503,7 @@ function applyActiveProviderProfile() {
     profilePhoneInput.value = account.telephone;
   }
 
-  applyMenuUserName(fullName);
+  applyMenuUserName(displayName);
   applyMenuUserEmail(account.email || "");
   applyUserAvatar(account.photoProfil || account.photo || account.avatarUrl || "");
 
@@ -2939,6 +3521,7 @@ function applyActiveUserProfile() {
   }
 
   syncProfilePhotoEditAccess();
+  syncPage8ChatFabState();
   renderPage10OngoingRequests();
   renderPage23CancelledRequests();
   renderClientNotifications();
@@ -3016,7 +3599,11 @@ function activateProfileSession(profileType, email, statusPayload = null) {
       age: Number.isFinite(Number((statusPayload && statusPayload.age) || existing.age))
         ? Number((statusPayload && statusPayload.age) || existing.age)
         : null,
-      cinImage: String((statusPayload && statusPayload.cinImage) || existing.cinImage || "").trim()
+      cinImage: String((statusPayload && statusPayload.cinImage) || existing.cinImage || "").trim(),
+      photoProfil: String((statusPayload && statusPayload.photoProfil) || existing.photoProfil || "").trim(),
+      statutVerification: String(
+        (statusPayload && statusPayload.statutVerification) || existing.statutVerification || "en_attente"
+      ).toLowerCase()
     };
     upsertClientAccount(nextClient);
     try {
@@ -3289,19 +3876,13 @@ function getProviderRatingStatsFromCompletedRequests(providerLike) {
   };
 }
 
-function getProviderAverageRatingLabel(providerLike, fallbackRating = "4.7") {
+function getProviderAverageRatingLabel(providerLike) {
   const stats = getProviderRatingStatsFromCompletedRequests(providerLike);
   if (stats.count > 0 && Number.isFinite(Number(stats.average))) {
     return Number(stats.average).toFixed(1);
   }
 
-  const numericFallback = Number(String(fallbackRating || "").replace(",", "."));
-  if (Number.isFinite(numericFallback) && numericFallback > 0) {
-    return numericFallback.toFixed(1);
-  }
-
-  const safeFallback = String(fallbackRating || "").trim();
-  return safeFallback || "4.7";
+  return "N.N";
 }
 
 function resolveProviderEmailForRequest(requestEntry) {
@@ -3311,7 +3892,10 @@ function resolveProviderEmailForRequest(requestEntry) {
   }
 
   const requestName = normalizeProviderIdentityName(requestEntry && requestEntry.providerName);
-  if (!requestName) {
+  const requestFirstName = normalizeProviderIdentityName(
+    formatProviderFirstName(requestEntry && requestEntry.providerName)
+  );
+  if (!requestName && !requestFirstName) {
     return "";
   }
   const requestDomain = normalizeProviderCategory((requestEntry && requestEntry.providerDomain) || "");
@@ -3325,7 +3909,14 @@ function resolveProviderEmailForRequest(requestEntry) {
       `${(account && account.prenom) || ""} ${(account && account.nom) || ""}`.trim() ||
       String((account && account.name) || "").trim()
     );
-    if (!accountName || accountName !== requestName) {
+    const accountFirstName = normalizeProviderIdentityName(formatProviderFirstName(accountName));
+    const hasExactNameMatch = Boolean(requestName && accountName && accountName === requestName);
+    const hasFirstNameMatch = Boolean(
+      requestFirstName &&
+      accountFirstName &&
+      accountFirstName === requestFirstName
+    );
+    if (!hasExactNameMatch && !hasFirstNameMatch) {
       return false;
     }
 
@@ -3357,6 +3948,25 @@ function normalizeProviderServiceRadiusKm(value, fallbackValue = 5) {
   }
 
   return Number(parsed);
+}
+
+function resolveProviderDirectoryImage(providerAccount = {}) {
+  const normalizedEmail = String((providerAccount && providerAccount.email) || "").trim().toLowerCase();
+  const localProviderAccount = normalizedEmail ? findProviderAccountByEmail(normalizedEmail) : null;
+  const localPhoto = normalizeProfilePhotoValue(
+    localProviderAccount &&
+      (localProviderAccount.photoProfil || localProviderAccount.photo || localProviderAccount.avatarUrl || "")
+  );
+  const sourcePhoto = normalizeProfilePhotoValue(
+    localPhoto ||
+      providerAccount.photoProfil ||
+      providerAccount.photo ||
+      providerAccount.avatarUrl ||
+      providerAccount.image ||
+      ""
+  );
+
+  return sourcePhoto ? resolveAccountPhotoSrc(sourcePhoto) : DEFAULT_PROVIDER_CARD_IMAGE;
 }
 
 function buildVerifiedProviderDirectoryItem(providerAccount = {}) {
@@ -3412,12 +4022,13 @@ function buildVerifiedProviderDirectoryItem(providerAccount = {}) {
     email ||
     "Prestataire"
   );
-  const rawPhoto =
+  const rawPhoto = normalizeProfilePhotoValue(
     providerAccount.photoProfil ||
-    providerAccount.photo ||
-    providerAccount.avatarUrl ||
-    providerAccount.image ||
-    "";
+      providerAccount.photo ||
+      providerAccount.avatarUrl ||
+      providerAccount.image ||
+      ""
+  );
 
   return {
     email,
@@ -3437,7 +4048,8 @@ function buildVerifiedProviderDirectoryItem(providerAccount = {}) {
     description: String(
       providerAccount.experience || providerAccount.description || "Prestataire verifie sur la plateforme."
     ).trim(),
-    image: rawPhoto ? resolveAccountPhotoSrc(rawPhoto) : DEFAULT_PROVIDER_CARD_IMAGE
+    photoProfil: rawPhoto,
+    image: resolveProviderDirectoryImage({ ...providerAccount, email, photoProfil: rawPhoto })
   };
 }
 
@@ -3545,7 +4157,11 @@ async function fetchVerifiedProvidersFromBackend() {
 
   for (const apiBase of getApiCandidates()) {
     try {
-      const response = await fetchWithTimeout(`${apiBase}/prestataires`);
+      const response = await fetchWithTimeout(`${apiBase}/prestataires?ts=${Date.now()}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+        cache: "no-store"
+      });
       const payload = await response.json().catch(() => ({}));
       const message = String((payload && payload.message) || "").toLowerCase();
 
@@ -3648,6 +4264,29 @@ async function syncVerifiedProviderDirectoryFromBackend() {
   }
 }
 
+function syncVerifiedProviderDirectoryIfVisible(force = false) {
+  const activePage = getActivePageClass();
+  if (!force && !isProviderDirectoryPage(activePage)) {
+    return;
+  }
+  syncVerifiedProviderDirectoryFromBackend().catch(() => {
+    return;
+  });
+}
+
+function ensureProviderDirectoryPolling() {
+  if (providerDirectoryPollTimer) {
+    return;
+  }
+
+  providerDirectoryPollTimer = window.setInterval(() => {
+    if (document.hidden) {
+      return;
+    }
+    syncVerifiedProviderDirectoryIfVisible(false);
+  }, PROVIDER_DIRECTORY_SYNC_INTERVAL_MS);
+}
+
 function upsertVerifiedProviderDirectory(providerAccount) {
   if (!providerAccount) {
     return;
@@ -3694,8 +4333,8 @@ function renderDynamicProviderDirectory() {
     const safeName = escapeHtml(formatProviderFirstName(provider.name || "Prestataire") || "Prestataire");
     const safeDomain = escapeHtml(String(provider.domain || "prestataire").replace(/_/g, " "));
     const safeDescription = escapeHtml(provider.description || "Prestataire verifie sur la plateforme.");
-    const safeImage = escapeHtml(provider.image || DEFAULT_PROVIDER_CARD_IMAGE);
-    const safeRating = escapeHtml(getProviderAverageRatingLabel(provider, provider.rating || "4.7"));
+    const safeImage = escapeHtml(resolveProviderDirectoryImage(provider));
+    const safeRating = escapeHtml(getProviderAverageRatingLabel(provider));
     const safePrice = escapeHtml(provider.price || "200DH");
     const safeEmail = escapeHtml(provider.email || "");
     const safeCoverageLatitude = escapeHtml(
@@ -4260,6 +4899,12 @@ function getProviderProfileFromDataset(button) {
 
   const name = (button.dataset.providerName || "").trim();
   if (!name) return null;
+  const domain = (button.dataset.providerDomain || "").trim();
+  const resolvedEmail = resolveProviderEmailForRequest({
+    providerEmail: (button.dataset.providerEmail || "").trim().toLowerCase(),
+    providerName: name,
+    providerDomain: domain
+  });
   const coverageLatitude = parseOptionalNumberValue(button.dataset.providerCoverageLatitude);
   const coverageLongitude = parseOptionalNumberValue(button.dataset.providerCoverageLongitude);
   const coverageAccuracy = parseOptionalNumberValue(button.dataset.providerCoverageAccuracy);
@@ -4268,10 +4913,10 @@ function getProviderProfileFromDataset(button) {
     name,
     rating: (button.dataset.providerRating || "4.7").trim(),
     price: (button.dataset.providerPrice || "200DH").trim(),
-    domain: (button.dataset.providerDomain || "").trim(),
+    domain,
     description: (button.dataset.providerDescription || "").trim(),
     image: (button.dataset.providerImage || "").trim(),
-    email: (button.dataset.providerEmail || "").trim().toLowerCase(),
+    email: resolvedEmail,
     coverageLatitude: Number.isFinite(Number(coverageLatitude)) ? Number(coverageLatitude) : null,
     coverageLongitude: Number.isFinite(Number(coverageLongitude)) ? Number(coverageLongitude) : null,
     coverageAccuracy: Number.isFinite(Number(coverageAccuracy)) ? Number(coverageAccuracy) : null,
@@ -4284,7 +4929,7 @@ function applyProviderProfile(profile) {
   if (!profile) return;
 
   if (providerProfileName) providerProfileName.textContent = profile.name || "-";
-  const providerRatingLabel = getProviderAverageRatingLabel(profile, profile.rating || "4.7");
+  const providerRatingLabel = getProviderAverageRatingLabel(profile);
   if (providerProfileRating) providerProfileRating.textContent = providerRatingLabel || "-";
   if (providerProfilePrice) providerProfilePrice.textContent = profile.price || "-";
   if (providerProfileDomain) providerProfileDomain.textContent = profile.domain || "-";
@@ -4384,13 +5029,16 @@ function isValidOrderGeoLocation(locationData) {
 }
 
 function isValidLatLngCoordinates(latitude, longitude) {
+  const resolvedLat = Number(latitude);
+  const resolvedLng = Number(longitude);
   return (
-    Number.isFinite(Number(latitude)) &&
-    Number.isFinite(Number(longitude)) &&
-    Number(latitude) >= -90 &&
-    Number(latitude) <= 90 &&
-    Number(longitude) >= -180 &&
-    Number(longitude) <= 180
+    Number.isFinite(resolvedLat) &&
+    Number.isFinite(resolvedLng) &&
+    resolvedLat >= -90 &&
+    resolvedLat <= 90 &&
+    resolvedLng >= -180 &&
+    resolvedLng <= 180 &&
+    !isNullIslandCoordinate(resolvedLat, resolvedLng)
   );
 }
 
@@ -4575,13 +5223,12 @@ async function renderPage20GoogleMap() {
   }
 
   const providerCoverageState = resolvePage18ProviderCoverageState();
-  if (!hasProviderCoverageLocation(providerCoverageState.locationData)) {
-    setPage20MapPlaceholder("Position du prestataire indisponible.");
-    return;
-  }
-
-  const providerLat = Number(providerCoverageState.locationData.latitude);
-  const providerLng = Number(providerCoverageState.locationData.longitude);
+  const hasProviderLiveLocation = hasProviderCoverageLocation(providerCoverageState.locationData);
+  const providerMapLocation = hasProviderLiveLocation
+    ? providerCoverageState.locationData
+    : { ...DEFAULT_PROVIDER_COVERAGE_CENTER };
+  const providerLat = Number(providerMapLocation.latitude);
+  const providerLng = Number(providerMapLocation.longitude);
   const hasServiceAddress = hasCurrentOrderTrackingGeo();
   const serviceLat = hasServiceAddress ? Number(currentOrderTracking.latitude) : null;
   const serviceLng = hasServiceAddress ? Number(currentOrderTracking.longitude) : null;
@@ -4617,10 +5264,13 @@ async function renderPage20GoogleMap() {
   }).addTo(page20MapInstance);
 
   const providerLatLng = [providerLat, providerLng];
+  const providerMarkerTitle = hasProviderLiveLocation
+    ? "Position du prestataire"
+    : "Position du prestataire (par defaut)";
   page20MapProviderMarker = window.L.marker(providerLatLng, {
-    title: "Position du prestataire"
+    title: providerMarkerTitle
   }).addTo(page20MapInstance);
-  page20MapProviderMarker.bindPopup("Position du prestataire");
+  page20MapProviderMarker.bindPopup(providerMarkerTitle);
 
   page20MapOuterZoneCircle = window.L.circle(providerLatLng, {
     radius: serviceRadiusMeters,
@@ -5190,16 +5840,20 @@ function applyCurrentOrderTrackingSummary() {
   syncPage18PaymentButtonState();
 }
 
-function resetCurrentOrderTracking() {
-  currentOrderTracking = {
+function buildDefaultOrderTrackingState() {
+  return {
     addressLabel: DEFAULT_ORDER_ADDRESS_LABEL,
     distanceKm: null,
     calculatedPriceDh: null,
-    latitude: null,
-    longitude: null,
-    addressSource: "default",
+    latitude: Number(DEFAULT_ORDER_SERVICE_COORDINATES.latitude),
+    longitude: Number(DEFAULT_ORDER_SERVICE_COORDINATES.longitude),
+    addressSource: "manual_map",
     addressConfirmed: false
   };
+}
+
+function resetCurrentOrderTracking() {
+  currentOrderTracking = buildDefaultOrderTrackingState();
   page20MapGeoAttempted = false;
   applyCurrentOrderTrackingSummary();
 }
@@ -5209,6 +5863,822 @@ function getActiveClientEmail() {
   return String((clientAccount && clientAccount.email) || "")
     .trim()
     .toLowerCase();
+}
+
+function getActiveProviderEmail() {
+  const providerAccount = getActiveProviderAccount();
+  return String((providerAccount && providerAccount.email) || "")
+    .trim()
+    .toLowerCase();
+}
+
+function resolveActiveProfileTypeForChat() {
+  const hasClient = Boolean(getActiveClientEmail());
+  const hasProvider = Boolean(getActiveProviderEmail());
+
+  if (hasClient && !hasProvider) {
+    return "client";
+  }
+  if (hasProvider && !hasClient) {
+    return "prestataire";
+  }
+  if (!hasClient && !hasProvider) {
+    return "";
+  }
+
+  const activeScreen = document.querySelector(".screen.active");
+  const activePage = getPageClassFromElement(activeScreen) || String(activeOrderChatReturnPage || "").trim();
+  const roleFromActivePage = resolveProfileRoleFromPageClass(activePage);
+  if (roleFromActivePage) {
+    return roleFromActivePage;
+  }
+
+  if (activePage === "page16" || activePage === "page33") {
+    const sourcePage = String(activeOrderChatReturnPage || previousPageClass || "").trim();
+    const roleFromSourcePage = resolveProfileRoleFromPageClass(sourcePage);
+    if (roleFromSourcePage) {
+      return roleFromSourcePage;
+    }
+  }
+
+  if (activeOrderChatParticipant && activeOrderChatParticipant.senderType) {
+    const senderType = String(activeOrderChatParticipant.senderType || "").trim().toLowerCase();
+    if (senderType === "client" || senderType === "prestataire") {
+      return senderType;
+    }
+  }
+
+  const explicitRole = getActiveProfileRole();
+  if (explicitRole === "client" || explicitRole === "prestataire") {
+    return explicitRole;
+  }
+
+  if (lastResolvedProfileType === "prestataire" || lastResolvedProfileType === "client") {
+    return lastResolvedProfileType;
+  }
+
+  return hasProvider ? "prestataire" : "client";
+}
+
+function isProviderRequestSessionActive() {
+  const activeClientEmail = getActiveClientEmail();
+  const activeProviderEmail = getActiveProviderEmail();
+  const explicitRole = getActiveProfileRole();
+  const activeRole = resolveActiveProfileTypeForChat();
+  return (
+    explicitRole === "prestataire" ||
+    (explicitRole !== "client" &&
+      (activeRole === "prestataire" || (!activeClientEmail && Boolean(activeProviderEmail))))
+  );
+}
+
+function syncRequestHistoryTabsVisibility() {
+  const hideCancelled = false;
+  const toggleHidden = (node) => {
+    if (!node) {
+      return;
+    }
+    node.hidden = hideCancelled;
+    node.disabled = hideCancelled;
+    node.setAttribute("aria-disabled", String(hideCancelled));
+  };
+
+  toggleHidden(openPage23Btn);
+  toggleHidden(openPage23From22Btn);
+  toggleHidden(openPage22From23Btn);
+}
+
+function getActiveChatParticipant() {
+  const activeProfileType = resolveActiveProfileTypeForChat();
+
+  if (activeProfileType === "client") {
+    const client = getActiveClientAccount();
+    const clientEmail = getActiveClientEmail();
+    if (!clientEmail) {
+      return null;
+    }
+    return {
+      senderType: "client",
+      id: clientEmail,
+      email: clientEmail,
+      name: buildParticipantDisplayName(client && client.prenom, client && client.nom, clientEmail)
+    };
+  }
+
+  if (activeProfileType === "prestataire") {
+    const provider = getActiveProviderAccount();
+    const providerEmail = getActiveProviderEmail();
+    if (!providerEmail) {
+      return null;
+    }
+    return {
+      senderType: "prestataire",
+      id: providerEmail,
+      email: providerEmail,
+      name: buildParticipantDisplayName(provider && provider.prenom, provider && provider.nom, providerEmail)
+    };
+  }
+
+  return null;
+}
+
+function buildParticipantDisplayName(prenom, nom, fallback = "") {
+  const safePrenom = String(prenom || "").trim();
+  const safeNom = String(nom || "").trim();
+  if (safePrenom && safeNom) {
+    if (safePrenom.toLowerCase() === safeNom.toLowerCase()) {
+      return safePrenom;
+    }
+    return `${safePrenom} ${safeNom}`.trim();
+  }
+  return safePrenom || safeNom || String(fallback || "").trim();
+}
+
+function getActiveSupportParticipant() {
+  if (activeSupportParticipantContext && typeof activeSupportParticipantContext === "object") {
+    const email = String(activeSupportParticipantContext.participantEmail || "").trim().toLowerCase();
+    const type = String(activeSupportParticipantContext.participantType || "").trim().toLowerCase();
+    if (email && (type === "client" || type === "prestataire")) {
+      return {
+        participantType: type,
+        participantEmail: email,
+        participantName: String(activeSupportParticipantContext.participantName || "").trim() || email
+      };
+    }
+  }
+
+  const activeProfileType = resolveActiveProfileTypeForChat();
+
+  if (activeProfileType === "client") {
+    const client = getActiveClientAccount();
+    const clientEmail = getActiveClientEmail();
+    if (!clientEmail) {
+      return null;
+    }
+    return {
+      participantType: "client",
+      participantEmail: clientEmail,
+      participantName: buildParticipantDisplayName(client && client.prenom, client && client.nom, clientEmail)
+    };
+  }
+
+  if (activeProfileType === "prestataire") {
+    const provider = getActiveProviderAccount();
+    const providerEmail = getActiveProviderEmail();
+    if (!providerEmail) {
+      return null;
+    }
+    return {
+      participantType: "prestataire",
+      participantEmail: providerEmail,
+      participantName: buildParticipantDisplayName(provider && provider.prenom, provider && provider.nom, providerEmail)
+    };
+  }
+
+  return null;
+}
+
+function setSupportChatFeedback(message = "", tone = "neutral") {
+  if (!supportChatFeedback) {
+    return;
+  }
+
+  supportChatFeedback.textContent = String(message || "");
+  supportChatFeedback.classList.remove("is-error", "is-success");
+  if (tone === "error") {
+    supportChatFeedback.classList.add("is-error");
+  } else if (tone === "success") {
+    supportChatFeedback.classList.add("is-success");
+  }
+}
+
+function stopSupportChatPolling() {
+  if (supportChatPollTimer) {
+    window.clearInterval(supportChatPollTimer);
+    supportChatPollTimer = null;
+  }
+}
+
+function formatSupportChatDate(value) {
+  const date = new Date(String(value || ""));
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function renderSupportChatMessages(messages = [], currentParticipantType = "") {
+  if (!supportChatMessages) {
+    return;
+  }
+
+  const rows = Array.isArray(messages) ? messages : [];
+  if (!rows.length) {
+    supportChatMessages.innerHTML = "";
+    return;
+  }
+
+  supportChatMessages.innerHTML = rows
+    .map((entry) => {
+      const senderType = String((entry && entry.participantType) || "").trim().toLowerCase();
+      const currentType = String(currentParticipantType || "").trim().toLowerCase();
+      const isMine = Boolean(currentType) && senderType === currentType;
+      const senderNameRaw = String((entry && entry.participantName) || "").trim();
+      const senderName = senderNameRaw || (senderType === "moderateur" ? "Support" : "Vous");
+      const rowClass = isMine ? "support-chat-item is-me" : "support-chat-item is-support";
+      const messageText = escapeHtmlForChat(String((entry && entry.message) || "").trim());
+      const meta = escapeHtmlForChat(`${senderName} • ${formatSupportChatDate(entry && entry.createdAt)}`);
+      return `
+        <div class="${rowClass}">
+          <span class="support-chat-meta">${meta}</span>
+          <div class="support-chat-bubble">${messageText}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  supportChatMessages.scrollTop = supportChatMessages.scrollHeight;
+}
+
+function getAllSupportLocalMessages() {
+  try {
+    const raw = localStorage.getItem(SUPPORT_CHAT_LOCAL_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveAllSupportLocalMessages(items) {
+  try {
+    localStorage.setItem(SUPPORT_CHAT_LOCAL_STORAGE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+  } catch (error) {
+    return;
+  }
+}
+
+function getSupportLocalMessagesByParticipant(participantEmail) {
+  const normalizedEmail = String(participantEmail || "").trim().toLowerCase();
+  if (!normalizedEmail) {
+    return [];
+  }
+  return getAllSupportLocalMessages()
+    .filter((entry) => String((entry && entry.participantEmail) || "").trim().toLowerCase() === normalizedEmail)
+    .sort((left, right) => {
+      const leftDate = Date.parse(String((left && left.createdAt) || "")) || 0;
+      const rightDate = Date.parse(String((right && right.createdAt) || "")) || 0;
+      return leftDate - rightDate;
+    });
+}
+
+function upsertSupportLocalMessagesForParticipant(participantEmail, messages = []) {
+  const normalizedEmail = String(participantEmail || "").trim().toLowerCase();
+  if (!normalizedEmail) {
+    return;
+  }
+
+  const untouched = getAllSupportLocalMessages().filter(
+    (entry) => String((entry && entry.participantEmail) || "").trim().toLowerCase() !== normalizedEmail
+  );
+
+  const normalizedMessages = (Array.isArray(messages) ? messages : [])
+    .map((entry) => ({
+      participantEmail: normalizedEmail,
+      participantType: String((entry && entry.participantType) || "").trim().toLowerCase(),
+      participantName: String((entry && entry.participantName) || "").trim(),
+      moderatorId: String((entry && entry.moderatorId) || "").trim().toLowerCase(),
+      message: String((entry && entry.message) || "").trim(),
+      createdAt: String((entry && entry.createdAt) || new Date().toISOString())
+    }))
+    .filter((entry) => entry.message);
+
+  saveAllSupportLocalMessages([...untouched, ...normalizedMessages].slice(-800));
+}
+
+function pushSupportLocalMessage(entry) {
+  const normalized = entry && typeof entry === "object" ? { ...entry } : null;
+  if (!normalized) {
+    return;
+  }
+  const messageText = String(normalized.message || "").trim();
+  const participantEmail = String(normalized.participantEmail || "").trim().toLowerCase();
+  if (!participantEmail || !messageText) {
+    return;
+  }
+  normalized.participantEmail = participantEmail;
+  normalized.message = messageText;
+  normalized.participantType = String(normalized.participantType || "").trim().toLowerCase();
+  normalized.participantName = String(normalized.participantName || "").trim();
+  normalized.createdAt = String(normalized.createdAt || new Date().toISOString());
+  const next = [...getAllSupportLocalMessages(), normalized].slice(-800);
+  saveAllSupportLocalMessages(next);
+}
+
+async function fetchSupportMessagesForParticipant(participantEmail) {
+  const normalizedEmail = String(participantEmail || "").trim().toLowerCase();
+  if (!normalizedEmail) {
+    return [];
+  }
+
+  let lastNetworkError = null;
+
+  for (const apiBase of getApiCandidates()) {
+    try {
+      const response = await fetchWithTimeout(
+        `${apiBase}/support/messages?participantEmail=${encodeURIComponent(normalizedEmail)}&t=${Date.now()}`,
+        { method: "GET", headers: { "Content-Type": "application/json" }, cache: "no-store" }
+      );
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.message || "Lecture du support impossible.");
+      }
+
+      saveApiBase(apiBase);
+      return Array.isArray(payload.messages) ? payload.messages : [];
+    } catch (error) {
+      if (isNetworkError(error)) {
+        lastNetworkError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastNetworkError || new Error("Serveur backend inaccessible.");
+}
+
+async function sendSupportMessageForParticipant(participant, message) {
+  const normalizedMessage = String(message || "").trim();
+  if (!participant || !participant.participantEmail || !participant.participantType || !normalizedMessage) {
+    throw new Error("Message support invalide.");
+  }
+
+  let lastNetworkError = null;
+
+  for (const apiBase of getApiCandidates()) {
+    try {
+      const response = await fetchWithTimeout(`${apiBase}/support/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          participantEmail: participant.participantEmail,
+          participantType: participant.participantType,
+          participantName: participant.participantName,
+          message: normalizedMessage
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "Envoi du message support impossible.");
+      }
+
+      saveApiBase(apiBase);
+      return payload;
+    } catch (error) {
+      if (isNetworkError(error)) {
+        lastNetworkError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastNetworkError || new Error("Serveur backend inaccessible.");
+}
+
+async function refreshSupportChatMessages(options = {}) {
+  const participant = getActiveSupportParticipant();
+  if (!participant) {
+    if (supportChatMessages) {
+      supportChatMessages.innerHTML =
+        '<div class="support-chat-empty">Le chat support est disponible apres connexion.</div>';
+    }
+    setSupportChatFeedback("Connectez-vous pour parler au support.", "error");
+    stopSupportChatPolling();
+    return;
+  }
+
+  const localMessages = getSupportLocalMessagesByParticipant(participant.participantEmail);
+
+  try {
+    const messages = await fetchSupportMessagesForParticipant(participant.participantEmail);
+    const nextMessages = Array.isArray(messages) ? messages : [];
+    if (nextMessages.length > 0) {
+      supportChatCachedMessages = nextMessages;
+      upsertSupportLocalMessagesForParticipant(participant.participantEmail, nextMessages);
+      renderSupportChatMessages(nextMessages, participant.participantType);
+    } else if (localMessages.length > 0) {
+      supportChatCachedMessages = localMessages;
+      renderSupportChatMessages(localMessages, participant.participantType);
+    } else if (supportChatCachedMessages.length > 0) {
+      renderSupportChatMessages(supportChatCachedMessages, participant.participantType);
+    } else {
+      renderSupportChatMessages([], participant.participantType);
+    }
+    const latestTimestamp = messages.reduce((maxValue, row) => {
+      const stamp = Date.parse(String((row && row.createdAt) || "")) || 0;
+      return stamp > maxValue ? stamp : maxValue;
+    }, 0);
+    if (latestTimestamp > supportChatLastRenderedAt) {
+      supportChatLastRenderedAt = latestTimestamp;
+    }
+    if (!options.keepFeedback) {
+      setSupportChatFeedback("");
+    }
+  } catch (error) {
+    if (!options.silent) {
+      setSupportChatFeedback(error.message || "Chargement du support impossible.", "error");
+    }
+  }
+}
+
+function startSupportChatPolling() {
+  stopSupportChatPolling();
+  supportChatPollTimer = setInterval(() => {
+    const activeScreen = document.querySelector(".screen.active");
+    const isSupportOpen = Boolean(activeScreen && activeScreen.classList.contains("page16"));
+    if (!isSupportOpen) {
+      stopSupportChatPolling();
+      return;
+    }
+    refreshSupportChatMessages({ silent: true, keepFeedback: true }).catch(() => {
+      return;
+    });
+  }, 900);
+}
+
+async function openSupportChatPage() {
+  const participantBeforeNavigation = getActiveSupportParticipant();
+  goTo("page16");
+  supportChatCachedMessages = [];
+  supportChatLastRenderedAt = 0;
+  activeSupportParticipantContext = participantBeforeNavigation;
+  const participant = getActiveSupportParticipant();
+  if (!participant) {
+    setSupportChatFeedback("Connectez-vous pour parler au support.", "error");
+    return;
+  }
+  const localMessages = getSupportLocalMessagesByParticipant(participant.participantEmail);
+  if (localMessages.length > 0) {
+    supportChatCachedMessages = localMessages;
+    renderSupportChatMessages(localMessages, participant.participantType);
+  }
+  setSupportChatFeedback("Chargement...", "neutral");
+  await refreshSupportChatMessages();
+  startSupportChatPolling();
+}
+
+function getAllOrderChatLocalMessages() {
+  try {
+    const raw = localStorage.getItem(ORDER_CHAT_LOCAL_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveAllOrderChatLocalMessages(items) {
+  try {
+    localStorage.setItem(ORDER_CHAT_LOCAL_STORAGE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+  } catch (error) {
+    return;
+  }
+}
+
+function getOrderChatLastSeenMap() {
+  try {
+    const raw = localStorage.getItem(ORDER_CHAT_LAST_SEEN_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveOrderChatLastSeenMap(map) {
+  try {
+    localStorage.setItem(
+      ORDER_CHAT_LAST_SEEN_STORAGE_KEY,
+      JSON.stringify(map && typeof map === "object" ? map : {})
+    );
+  } catch (error) {
+    return;
+  }
+}
+
+function markOrderChatSeen(requestId, seenAt = Date.now()) {
+  const normalizedRequestId = String(requestId || "").trim();
+  if (!normalizedRequestId) {
+    return;
+  }
+  const timestamp = Number.isFinite(Number(seenAt)) ? Number(seenAt) : Date.now();
+  const map = getOrderChatLastSeenMap();
+  map[normalizedRequestId] = timestamp;
+  saveOrderChatLastSeenMap(map);
+}
+
+function getOrderChatLastSeen(requestId) {
+  const normalizedRequestId = String(requestId || "").trim();
+  if (!normalizedRequestId) {
+    return 0;
+  }
+  const map = getOrderChatLastSeenMap();
+  const value = Number(map[normalizedRequestId]);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function getOrderChatLocalMessagesByRequestId(requestId) {
+  const normalizedRequestId = String(requestId || "").trim();
+  if (!normalizedRequestId) {
+    return [];
+  }
+
+  return getAllOrderChatLocalMessages()
+    .filter((entry) => String((entry && entry.commandeId) || "").trim() === normalizedRequestId)
+    .sort((left, right) => {
+      const leftDate = Date.parse(String((left && left.createdAt) || "")) || 0;
+      const rightDate = Date.parse(String((right && right.createdAt) || "")) || 0;
+      return leftDate - rightDate;
+    });
+}
+
+function hasParticipantAccessToRequestIdLocally(requestId, participantEmail) {
+  const normalizedRequestId = String(requestId || "").trim();
+  const normalizedParticipantEmail = String(participantEmail || "").trim().toLowerCase();
+  if (!normalizedRequestId || !normalizedParticipantEmail) {
+    return false;
+  }
+
+  const matchingRequests = getAllClientOngoingRequests().filter(
+    (entry) => String((entry && entry.id) || "").trim() === normalizedRequestId
+  );
+  if (!matchingRequests.length) {
+    return false;
+  }
+
+  return matchingRequests.some((entry) => {
+    const clientEmail = String((entry && entry.clientEmail) || "").trim().toLowerCase();
+    const providerEmail = String((entry && entry.providerEmail) || "").trim().toLowerCase();
+    return normalizedParticipantEmail === clientEmail || normalizedParticipantEmail === providerEmail;
+  });
+}
+
+function getLocalRequestById(requestId) {
+  const normalizedRequestId = String(requestId || "").trim();
+  if (!normalizedRequestId) {
+    return null;
+  }
+  return (
+    getAllClientOngoingRequests().find(
+      (entry) => String((entry && entry.id) || "").trim() === normalizedRequestId
+    ) || null
+  );
+}
+
+function canOpenOrderChatForRequestEntry(entry) {
+  if (!entry) {
+    return false;
+  }
+
+  const status = normalizeRequestLifecycleStatus(entry && entry.status, "");
+  return status === "en_cours" || status === "en_attente_prestataire";
+}
+
+function resolveSelectedChatEligibleRequestId() {
+  const selectedRequestId = String(selectedOngoingRequestId || "").trim();
+  if (selectedRequestId) {
+    const selectedEntry = getLocalRequestById(selectedRequestId);
+    if (selectedEntry && canOpenOrderChatForRequestEntry(selectedEntry)) {
+      return selectedRequestId;
+    }
+  }
+
+  const fallbackEntry = getCurrentParticipantOngoingRequests().find((entry) =>
+    canOpenOrderChatForRequestEntry(entry)
+  );
+  if (!fallbackEntry) {
+    return "";
+  }
+
+  const fallbackRequestId = String((fallbackEntry && fallbackEntry.id) || "").trim();
+  if (!fallbackRequestId) {
+    return "";
+  }
+
+  selectedOngoingRequestId = fallbackRequestId;
+  return fallbackRequestId;
+}
+
+function pushOrderChatLocalMessage(entry) {
+  const normalizedEntry = entry && typeof entry === "object" ? entry : null;
+  if (!normalizedEntry) {
+    return null;
+  }
+
+  const nextItems = [normalizedEntry, ...getAllOrderChatLocalMessages()].slice(0, 500);
+  saveAllOrderChatLocalMessages(nextItems);
+  return normalizedEntry;
+}
+
+function removeOrderChatLocalMessagesByRequestId(requestId) {
+  const normalizedRequestId = String(requestId || "").trim();
+  if (!normalizedRequestId) {
+    return;
+  }
+
+  const nextItems = getAllOrderChatLocalMessages().filter(
+    (entry) => String((entry && entry.commandeId) || "").trim() !== normalizedRequestId
+  );
+  saveAllOrderChatLocalMessages(nextItems);
+}
+
+async function updateCommandeStatusForActiveParticipant(requestId, statut) {
+  const normalizedRequestId = String(requestId || "").trim();
+  const normalizedStatus = String(statut || "").trim().toLowerCase();
+  const participant = getActiveChatParticipant();
+  if (!normalizedRequestId || !participant || !participant.email || !normalizedStatus) {
+    return false;
+  }
+
+  for (const apiBase of getApiCandidates()) {
+    try {
+      const response = await fetchWithTimeout(`${apiBase}/commandes/${encodeURIComponent(normalizedRequestId)}/statut`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          participantEmail: participant.email,
+          statut: normalizedStatus
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "Mise a jour statut commande impossible.");
+      }
+
+      saveApiBase(apiBase);
+      return true;
+    } catch (error) {
+      if (isNetworkError(error)) {
+        continue;
+      }
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function mapCommandeStatusToLocalStatus(statut) {
+  return normalizeRequestLifecycleStatus(statut, "en_cours");
+}
+
+async function syncOngoingRequestsFromBackendForActiveParticipant() {
+  const activeRole = resolveActiveProfileTypeForChat();
+  const clientEmail = getActiveClientEmail();
+  const providerEmail = getActiveProviderEmail();
+  const useProviderQuery =
+    activeRole === "prestataire" || (activeRole !== "client" && !clientEmail && Boolean(providerEmail));
+  const participantEmail = useProviderQuery ? providerEmail : clientEmail || providerEmail;
+  if (!participantEmail) {
+    return;
+  }
+
+  const query = useProviderQuery
+    ? `prestataireEmail=${encodeURIComponent(providerEmail)}`
+    : `clientEmail=${encodeURIComponent(clientEmail)}`;
+
+  let fetchedCommandes = [];
+  for (const apiBase of getApiCandidates()) {
+    try {
+      const response = await fetchWithTimeout(`${apiBase}/commandes?${query}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" }
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "Chargement des commandes impossible.");
+      }
+
+      fetchedCommandes = Array.isArray(payload.commandes) ? payload.commandes : [];
+      saveApiBase(apiBase);
+      break;
+    } catch (error) {
+      if (isNetworkError(error)) {
+        continue;
+      }
+      break;
+    }
+  }
+
+  if (!fetchedCommandes.length) {
+    return;
+  }
+
+  const existing = getAllClientOngoingRequests();
+  const upserted = [...existing];
+
+  fetchedCommandes.forEach((commande) => {
+    const commandeId = String((commande && (commande._id || commande.id)) || "").trim();
+    if (!commandeId) {
+      return;
+    }
+
+    const client = commande && commande.clientId ? commande.clientId : {};
+    const provider = commande && commande.prestataireId ? commande.prestataireId : {};
+    const localStatus = mapCommandeStatusToLocalStatus(commande && commande.statut);
+    const providerName =
+      `${String((provider && provider.prenom) || "").trim()} ${String((provider && provider.nom) || "").trim()}`.trim() ||
+      String((provider && provider.email) || "Prestataire").trim();
+    const clientName =
+      `${String((client && client.prenom) || "").trim()} ${String((client && client.nom) || "").trim()}`.trim() ||
+      String((client && client.email) || "Client").trim();
+    const clientEmail = String((client && client.email) || "").trim().toLowerCase();
+    const localClientAccount = clientEmail ? findClientAccountByEmail(clientEmail) : null;
+    const providerCoordinates =
+      provider && provider.location && Array.isArray(provider.location.coordinates)
+        ? provider.location.coordinates
+        : null;
+    const providerGeoLongitude =
+      providerCoordinates && providerCoordinates.length >= 2 ? parseOptionalNumberValue(providerCoordinates[0]) : null;
+    const providerGeoLatitude =
+      providerCoordinates && providerCoordinates.length >= 2 ? parseOptionalNumberValue(providerCoordinates[1]) : null;
+    const providerCoverageLatitude = parseOptionalNumberValue(
+      provider && provider.coverageLatitude != null
+        ? provider.coverageLatitude
+        : provider && provider.latitude != null
+          ? provider.latitude
+          : providerGeoLatitude
+    );
+    const providerCoverageLongitude = parseOptionalNumberValue(
+      provider && provider.coverageLongitude != null
+        ? provider.coverageLongitude
+        : provider && provider.longitude != null
+          ? provider.longitude
+          : providerGeoLongitude
+    );
+    const providerCoverageAccuracy = parseOptionalNumberValue(
+      provider && provider.coverageAccuracy != null
+        ? provider.coverageAccuracy
+        : provider && provider.locationAccuracy != null
+          ? provider.locationAccuracy
+          : provider && provider.accuracy != null
+            ? provider.accuracy
+            : null
+    );
+    const providerCoverageLocationLabel = String(
+      (provider && (provider.coverageLocationLabel || provider.locationLabel)) || ""
+    ).trim();
+
+    const nextEntry = {
+      id: commandeId,
+      clientEmail,
+      clientName,
+      clientImage: String(
+        (client && (client.photoProfil || client.photo || client.avatarUrl)) ||
+          (localClientAccount &&
+            (localClientAccount.photoProfil || localClientAccount.photo || localClientAccount.avatarUrl)) ||
+          ""
+      ).trim(),
+      providerEmail: String((provider && provider.email) || "").trim().toLowerCase(),
+      providerName,
+      providerDomain: String((provider && (provider.domaine || provider.categorie)) || "").trim(),
+      providerImage: String((provider && provider.photoProfil) || "").trim() || DEFAULT_PROVIDER_CARD_IMAGE,
+      providerCoverageLatitude: Number.isFinite(Number(providerCoverageLatitude))
+        ? Number(providerCoverageLatitude)
+        : null,
+      providerCoverageLongitude: Number.isFinite(Number(providerCoverageLongitude))
+        ? Number(providerCoverageLongitude)
+        : null,
+      providerCoverageAccuracy: Number.isFinite(Number(providerCoverageAccuracy))
+        ? Number(providerCoverageAccuracy)
+        : null,
+      providerCoverageLocationLabel,
+      providerPrice: normalizeOngoingRequestPrice(commande && commande.distancePricingDh, `${DISTANCE_PRICE_BASE_DH}DH`),
+      createdAt: String((commande && commande.createdAt) || new Date().toISOString()),
+      status: localStatus
+    };
+
+    const existingIndex = upserted.findIndex((item) => String((item && item.id) || "").trim() === commandeId);
+    if (existingIndex >= 0) {
+      upserted[existingIndex] = {
+        ...upserted[existingIndex],
+        ...nextEntry
+      };
+    } else {
+      upserted.push(nextEntry);
+    }
+  });
+
+  saveAllClientOngoingRequests(upserted.slice(-250));
 }
 
 function getAllClientOngoingRequests() {
@@ -5427,6 +6897,28 @@ function pushProviderNotification(type, message, options = {}) {
   return nextEntry;
 }
 
+function normalizeRequestLifecycleStatus(value, fallbackStatus = "en_cours") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return String(fallbackStatus || "en_cours").trim().toLowerCase() || "en_cours";
+  }
+
+  if (normalized === "en_attente" || normalized === "en_attente_prestataire" || normalized === "pending") {
+    return "en_attente_prestataire";
+  }
+  if (normalized === "acceptee" || normalized === "accepted" || normalized === "en_cours") {
+    return "en_cours";
+  }
+  if (normalized === "annule" || normalized === "annulee" || normalized === "refuse" || normalized === "refuse_prestataire") {
+    return "annule";
+  }
+  if (normalized === "termine" || normalized === "terminee") {
+    return "termine";
+  }
+
+  return normalized;
+}
+
 function getClientOngoingRequestsForEmail(email) {
   const normalizedEmail = String(email || "")
     .trim()
@@ -5437,7 +6929,28 @@ function getClientOngoingRequestsForEmail(email) {
 
   return getAllClientOngoingRequests()
     .filter((entry) => String((entry && entry.clientEmail) || "").trim().toLowerCase() === normalizedEmail)
-    .filter((entry) => String((entry && entry.status) || "en_cours").trim().toLowerCase() === "en_cours")
+    .filter((entry) => normalizeRequestLifecycleStatus(entry && entry.status, "en_cours") === "en_cours")
+    .sort((left, right) => {
+      const rightDate = Date.parse(String((right && right.createdAt) || "")) || 0;
+      const leftDate = Date.parse(String((left && left.createdAt) || "")) || 0;
+      return rightDate - leftDate;
+    });
+}
+
+function getProviderOngoingRequestsForEmail(email) {
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedEmail) {
+    return [];
+  }
+
+  return getAllClientOngoingRequests()
+    .filter((entry) => String((entry && entry.providerEmail) || "").trim().toLowerCase() === normalizedEmail)
+    .filter((entry) => {
+      const status = normalizeRequestLifecycleStatus(entry && entry.status, "en_cours");
+      return status === "en_cours" || status === "en_attente_prestataire";
+    })
     .sort((left, right) => {
       const rightDate = Date.parse(String((right && right.createdAt) || "")) || 0;
       const leftDate = Date.parse(String((left && left.createdAt) || "")) || 0;
@@ -5460,11 +6973,52 @@ function getClientOngoingRequestById(requestId, email = getActiveClientEmail()) 
         .trim()
         .toLowerCase();
       const entryId = String((entry && entry.id) || "").trim();
-      const entryStatus = String((entry && entry.status) || "en_cours")
-        .trim()
-        .toLowerCase();
+      const entryStatus = normalizeRequestLifecycleStatus(entry && entry.status, "en_cours");
       return entryEmail === normalizedEmail && entryId === normalizedRequestId && entryStatus === "en_cours";
     }) || null
+  );
+}
+
+function getClientRequestByIdAnyStatus(requestId, email = getActiveClientEmail()) {
+  const normalizedRequestId = String(requestId || "").trim();
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedEmail || !normalizedRequestId) {
+    return null;
+  }
+
+  return (
+    getAllClientOngoingRequests().find((entry) => {
+      const entryEmail = String((entry && entry.clientEmail) || "")
+        .trim()
+        .toLowerCase();
+      const entryId = String((entry && entry.id) || "").trim();
+      return entryEmail === normalizedEmail && entryId === normalizedRequestId;
+    }) || null
+  );
+}
+
+function getLatestClientRequestForWaitingFlow(email = getActiveClientEmail()) {
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  return (
+    getAllClientOngoingRequests()
+      .filter((entry) => String((entry && entry.clientEmail) || "").trim().toLowerCase() === normalizedEmail)
+      .sort((left, right) => {
+        const rightDate = Date.parse(
+          String((right && (right.updatedAt || right.cancelledAt || right.completedAt || right.createdAt)) || "")
+        ) || 0;
+        const leftDate = Date.parse(
+          String((left && (left.updatedAt || left.cancelledAt || left.completedAt || left.createdAt)) || "")
+        ) || 0;
+        return rightDate - leftDate;
+      })[0] || null
   );
 }
 
@@ -5479,6 +7033,30 @@ function getClientFinishedRequestsForEmail(email) {
   return getAllClientOngoingRequests()
     .filter((entry) => String((entry && entry.clientEmail) || "").trim().toLowerCase() === normalizedEmail)
     .filter((entry) => String((entry && entry.status) || "").trim().toLowerCase() === "termine")
+    .sort((left, right) => {
+      const rightDate =
+        Date.parse(String((right && right.completedAt) || "")) ||
+        Date.parse(String((right && right.createdAt) || "")) ||
+        0;
+      const leftDate =
+        Date.parse(String((left && left.completedAt) || "")) ||
+        Date.parse(String((left && left.createdAt) || "")) ||
+        0;
+      return rightDate - leftDate;
+    });
+}
+
+function getProviderFinishedRequestsForEmail(email) {
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedEmail) {
+    return [];
+  }
+
+  return getAllClientOngoingRequests()
+    .filter((entry) => String((entry && entry.providerEmail) || "").trim().toLowerCase() === normalizedEmail)
+    .filter((entry) => normalizeRequestLifecycleStatus(entry && entry.status, "") === "termine")
     .sort((left, right) => {
       const rightDate =
         Date.parse(String((right && right.completedAt) || "")) ||
@@ -5516,10 +7094,63 @@ function getClientCancelledRequestsForEmail(email) {
     });
 }
 
+function wasRequestCancelledByClient(entry) {
+  const actor = String(
+    (entry && (entry.cancellationActor || entry.cancelledBy || entry.cancellationSource || "")) || ""
+  )
+    .trim()
+    .toLowerCase();
+  if (actor) {
+    return actor === "client";
+  }
+
+  const providerDecision = String((entry && entry.providerDecision) || "")
+    .trim()
+    .toLowerCase();
+  if (providerDecision === "refuse") {
+    return false;
+  }
+
+  const cancellationReason = String((entry && entry.cancellationReason) || "")
+    .trim()
+    .toLowerCase();
+  if (cancellationReason.includes("prestataire n'est pas en mesure d'accepter")) {
+    return false;
+  }
+
+  return normalizeRequestLifecycleStatus(entry && entry.status, "") === "annule";
+}
+
+function getProviderCancelledRequestsByClientForEmail(email) {
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedEmail) {
+    return [];
+  }
+
+  return getAllClientOngoingRequests()
+    .filter((entry) => String((entry && entry.providerEmail) || "").trim().toLowerCase() === normalizedEmail)
+    .filter((entry) => normalizeRequestLifecycleStatus(entry && entry.status, "") === "annule")
+    .filter((entry) => wasRequestCancelledByClient(entry))
+    .sort((left, right) => {
+      const rightDate =
+        Date.parse(String((right && right.cancelledAt) || "")) ||
+        Date.parse(String((right && right.createdAt) || "")) ||
+        0;
+      const leftDate =
+        Date.parse(String((left && left.cancelledAt) || "")) ||
+        Date.parse(String((left && left.createdAt) || "")) ||
+        0;
+      return rightDate - leftDate;
+    });
+}
+
 function renderPage22FinishedRequests() {
   if (!page22FinishedRequestsList) {
     return;
   }
+  syncRequestHistoryTabsVisibility();
 
   const escapeHtml = (value) =>
     String(value || "")
@@ -5527,10 +7158,13 @@ function renderPage22FinishedRequests() {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
-
-  const activeClientEmail = getActiveClientEmail();
-  const finishedRequests = getClientFinishedRequestsForEmail(activeClientEmail);
-  if (!activeClientEmail || !finishedRequests.length) {
+  const fallbackCardImage = escapeHtml(resolveAccountPhotoSrc(DEFAULT_PROVIDER_CARD_IMAGE));
+  const isProviderSession = isProviderRequestSessionActive();
+  const activeEmail = isProviderSession ? getActiveProviderEmail() : getActiveClientEmail();
+  const finishedRequests = isProviderSession
+    ? getProviderFinishedRequestsForEmail(activeEmail)
+    : getClientFinishedRequestsForEmail(activeEmail);
+  if (!activeEmail || !finishedRequests.length) {
     page22FinishedRequestsList.innerHTML =
       '<div class="page22-finished-empty">Aucune demande terminée pour le moment.</div>';
     return;
@@ -5538,16 +7172,60 @@ function renderPage22FinishedRequests() {
 
   const rowsMarkup = finishedRequests
     .map((entry, index) => {
-      const requestDomain = escapeHtml(formatOrderProviderDomainLabel(entry.providerDomain || entry.providerName));
       const providerDate = escapeHtml(formatOngoingRequestDateLabel(entry.completedAt || entry.createdAt));
       const providerPrice = escapeHtml(normalizeOngoingRequestPrice(entry.providerPrice, "200DH"));
+      const ratingValue = Number(entry && entry.completionRating);
+      const ratingLabel = Number.isFinite(ratingValue) && ratingValue >= 1 ? `${Math.round(ratingValue)}/5` : "-";
+      const separator = index < finishedRequests.length - 1 ? '<div class="box4"></div>' : '<div class="box5"></div>';
+
+      if (isProviderSession) {
+        const clientEmail = String((entry && entry.clientEmail) || "").trim().toLowerCase();
+        const clientAccount = findClientAccountByEmail(clientEmail);
+        const clientDisplayName = escapeHtml(
+          String((entry && (entry.clientName || entry.clientEmail)) || "Client").trim() || "Client"
+        );
+        const clientImage = escapeHtml(
+          resolveAccountPhotoSrc(
+            (clientAccount && (clientAccount.photoProfil || clientAccount.photo || clientAccount.avatarUrl)) ||
+              entry.clientImage ||
+              DEFAULT_USER_AVATAR_URL
+          )
+        );
+        const completionMeta = escapeHtml(`Note: ${ratingLabel}`);
+
+        return `
+          <div class="row-view3">
+            <img
+              src="${clientImage}"
+              alt="Profil ${clientDisplayName}"
+              class="image2"
+              onerror="this.onerror=null;this.src='${fallbackCardImage}'"
+            >
+            <div class="column">
+              <span class="text4">${clientDisplayName}</span>
+              <span class="text5">${providerDate}</span>
+              <div class="row-view4">
+                <img src="${FINISHED_REQUEST_STATUS_ICON}" alt="" class="image3">
+                <span class="text6">intervention terminee</span>
+              </div>
+              <span class="page22-finished-meta">${completionMeta}</span>
+            </div>
+            <div class="box3"></div>
+            <div class="column2">
+              <span class="text8">${providerPrice}</span>
+              <span class="text9">Client</span>
+            </div>
+          </div>
+          ${separator}
+        `;
+      }
+
+      const requestDomain = escapeHtml(formatOrderProviderDomainLabel(entry.providerDomain || entry.providerName));
       const providerImage = escapeHtml(resolveAccountPhotoSrc(entry.providerImage || DEFAULT_PROVIDER_CARD_IMAGE));
       const providerName = escapeHtml(formatProviderFirstName(entry.providerName || "Prestataire") || "Prestataire");
       const workDone = String((entry && entry.completionWorkDone) || "").trim().toLowerCase();
       const isNotValidated = workDone === "no" || workDone === "false";
-      const statusText = isNotValidated ? "travail non valide" : "service effectué";
-      const ratingValue = Number(entry && entry.completionRating);
-      const ratingLabel = Number.isFinite(ratingValue) && ratingValue >= 1 ? `${Math.round(ratingValue)}/5` : "-";
+      const statusText = isNotValidated ? "travail non valide" : "service effectue";
       const photoCountCandidate = Number(entry && entry.completionPhotoCount);
       const photoCountFromNames = Array.isArray(entry && entry.completionPhotoNames)
         ? entry.completionPhotoNames.length
@@ -5556,11 +7234,15 @@ function renderPage22FinishedRequests() {
       const photoSuffix = photoCount > 1 ? "s" : "";
       const completionMeta = escapeHtml(`Note: ${ratingLabel} | Preuves: ${photoCount} photo${photoSuffix}`);
       const statusClass = isNotValidated ? "page22-service-not-validated" : "";
-      const separator = index < finishedRequests.length - 1 ? '<div class="box4"></div>' : '<div class="box5"></div>';
 
       return `
         <div class="row-view3">
-          <img src="${providerImage}" alt="Service ${requestDomain}" class="image2">
+          <img
+            src="${providerImage}"
+            alt="Service ${requestDomain}"
+            class="image2"
+            onerror="this.onerror=null;this.src='${fallbackCardImage}'"
+          >
           <div class="column">
             <span class="text4">${requestDomain}</span>
             <span class="text5">${providerDate}</span>
@@ -5588,6 +7270,7 @@ function renderPage23CancelledRequests() {
   if (!page23CancelledRequestsList) {
     return;
   }
+  syncRequestHistoryTabsVisibility();
 
   const escapeHtml = (value) =>
     String(value || "")
@@ -5595,40 +7278,61 @@ function renderPage23CancelledRequests() {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  const fallbackCardImage = escapeHtml(resolveAccountPhotoSrc(DEFAULT_PROVIDER_CARD_IMAGE));
 
-  const activeClientEmail = getActiveClientEmail();
-  const cancelledRequests = getClientCancelledRequestsForEmail(activeClientEmail);
+  const isProviderSession = isProviderRequestSessionActive();
+  const activeEmail = isProviderSession ? getActiveProviderEmail() : getActiveClientEmail();
+  const cancelledRequests = isProviderSession
+    ? getProviderCancelledRequestsByClientForEmail(activeEmail)
+    : getClientCancelledRequestsForEmail(activeEmail);
 
-  if (!activeClientEmail || !cancelledRequests.length) {
+  if (!activeEmail || !cancelledRequests.length) {
     page23CancelledRequestsList.innerHTML =
-      '<div class="page23-cancelled-empty">Aucune demande annulée pour le moment.</div>';
+      isProviderSession
+        ? '<div class="page23-cancelled-empty">Aucune demande annulée par les clients pour le moment.</div>'
+        : '<div class="page23-cancelled-empty">Aucune demande annulée pour le moment.</div>';
     return;
   }
 
   const rowsMarkup = cancelledRequests
     .map((entry, index) => {
       const requestDomain = escapeHtml(formatOrderProviderDomainLabel(entry.providerDomain || entry.providerName));
-      const providerDate = escapeHtml(formatOngoingRequestDateLabel(entry.cancelledAt || entry.createdAt));
-      const providerPrice = escapeHtml(normalizeOngoingRequestPrice(entry.providerPrice, "200DH"));
-      const providerImage = escapeHtml(resolveAccountPhotoSrc(entry.providerImage || DEFAULT_PROVIDER_CARD_IMAGE));
-      const providerName = escapeHtml(entry.providerName || "Prestataire");
+      const cancelledDate = escapeHtml(formatOngoingRequestDateLabel(entry.cancelledAt || entry.createdAt));
+      const requestPrice = escapeHtml(normalizeOngoingRequestPrice(entry.providerPrice, "200DH"));
+      const clientNameRaw = String((entry && (entry.clientName || entry.clientEmail)) || "Client").trim();
+      const providerNameRaw = String((entry && entry.providerName) || "Prestataire").trim();
+      const counterpartName = escapeHtml(isProviderSession ? clientNameRaw : providerNameRaw);
+      const counterpartImage = escapeHtml(
+        resolveAccountPhotoSrc(
+          isProviderSession
+            ? String((entry && (entry.clientImage || entry.clientPhoto)) || "").trim() || DEFAULT_PROVIDER_CARD_IMAGE
+            : String((entry && entry.providerImage) || "").trim() || DEFAULT_PROVIDER_CARD_IMAGE
+        )
+      );
+      const rightLabel = escapeHtml(isProviderSession ? requestDomain : counterpartName);
+      const cancelledStatusText = isProviderSession ? "annule par client" : "service annule";
       const separator = index < cancelledRequests.length - 1 ? '<div class="box4"></div>' : '<div class="box5"></div>';
 
       return `
         <div class="row-view3">
-          <img src="${providerImage}" alt="Service ${requestDomain}" class="image2">
+          <img
+            src="${counterpartImage}"
+            alt="Profil ${counterpartName}"
+            class="image2"
+            onerror="this.onerror=null;this.src='${fallbackCardImage}'"
+          >
           <div class="column">
-            <span class="text4">${requestDomain}</span>
-            <span class="text5">${providerDate}</span>
+            <span class="text4">${isProviderSession ? counterpartName : requestDomain}</span>
+            <span class="text5">${cancelledDate}</span>
             <div class="row-view4">
               <img src="${NOTIFICATION_ICON_REQUEST_CANCELLED}" alt="" class="image3">
-              <span class="text6 page23-service-cancelled">service annule</span>
+              <span class="text6 page23-service-cancelled">${cancelledStatusText}</span>
             </div>
           </div>
           <div class="box3"></div>
           <div class="column2">
-            <span class="text8">${providerPrice}</span>
-            <span class="text9">${providerName}</span>
+            <span class="text8">${requestPrice}</span>
+            <span class="text9">${rightLabel}</span>
           </div>
         </div>
         ${separator}
@@ -5637,6 +7341,70 @@ function renderPage23CancelledRequests() {
     .join("");
 
   page23CancelledRequestsList.innerHTML = rowsMarkup;
+}
+
+function applyProviderDecisionToRequestById(requestId, decision = "") {
+  const normalizedRequestId = String(requestId || "").trim();
+  const normalizedDecision = String(decision || "").trim().toLowerCase();
+  const activeProviderEmail = getActiveProviderEmail();
+  if (!activeProviderEmail || !normalizedRequestId) {
+    return null;
+  }
+  if (normalizedDecision !== "accept" && normalizedDecision !== "reject") {
+    return null;
+  }
+
+  let updatedEntry = null;
+  const nowIso = new Date().toISOString();
+  const nextItems = getAllClientOngoingRequests().map((entry) => {
+    const entryId = String((entry && entry.id) || "").trim();
+    const entryProviderEmail = String((entry && entry.providerEmail) || "")
+      .trim()
+      .toLowerCase();
+    const entryStatus = normalizeRequestLifecycleStatus(entry && entry.status, "en_cours");
+
+    if (
+      !updatedEntry &&
+      entryId === normalizedRequestId &&
+      entryProviderEmail === activeProviderEmail &&
+      (entryStatus === "en_attente_prestataire" || entryStatus === "en_cours")
+    ) {
+      if (normalizedDecision === "accept") {
+        updatedEntry = {
+          ...entry,
+          status: "en_cours",
+          providerDecision: "accepte",
+          providerDecisionAt: nowIso,
+          acceptedAt: nowIso,
+          updatedAt: nowIso
+        };
+        return updatedEntry;
+      }
+
+      updatedEntry = {
+        ...entry,
+        status: "annule",
+        providerDecision: "refuse",
+        providerDecisionAt: nowIso,
+        cancellationActor: "prestataire",
+        cancelledAt: nowIso,
+        cancellationReason: "Le prestataire n'est pas en mesure d'accepter la demande.",
+        updatedAt: nowIso
+      };
+      return updatedEntry;
+    }
+
+    return entry;
+  });
+
+  if (!updatedEntry) {
+    return null;
+  }
+
+  saveAllClientOngoingRequests(nextItems);
+  renderPage10OngoingRequests();
+  renderPage23CancelledRequests();
+  return updatedEntry;
 }
 
 function cancelClientOngoingRequestById(requestId, cancellationReason = "") {
@@ -5666,6 +7434,7 @@ function cancelClientOngoingRequestById(requestId, cancellationReason = "") {
       cancelledEntry = {
         ...entry,
         status: "annule",
+        cancellationActor: "client",
         cancelledAt: new Date().toISOString(),
         cancellationReason: reason
       };
@@ -5882,8 +7651,31 @@ function formatOngoingRequestDateLabel(rawDate) {
   return `${day} ${month} , ${hour}:${minute}`;
 }
 
+function formatPage19RequestDateTime(rawDate) {
+  const date = new Date(String(rawDate || ""));
+  if (Number.isNaN(date.getTime())) {
+    return "Demande enregistree aujourd'hui";
+  }
+
+  const weekday = new Intl.DateTimeFormat("fr-FR", { weekday: "long" }).format(date);
+  const day = new Intl.DateTimeFormat("fr-FR", { day: "2-digit" }).format(date);
+  const hour = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", hour12: false }).format(date);
+  const minute = new Intl.DateTimeFormat("fr-FR", { minute: "2-digit" }).format(date);
+  return `Demande le ${weekday}, ${day}, ${hour}H${minute}`;
+}
+
+function applyPage19RequestDateTime(rawDate = "") {
+  if (!page19RequestDatetime) {
+    return;
+  }
+
+  const resolvedDate = String(rawDate || lastPaidRequestTimestamp || "").trim();
+  page19RequestDatetime.textContent = formatPage19RequestDateTime(resolvedDate);
+}
+
 function saveCurrentOrderToOngoingRequests(payload = null) {
   const clientEmail = getActiveClientEmail();
+  const clientAccount = getActiveClientAccount();
   if (!clientEmail) {
     return;
   }
@@ -5905,14 +7697,30 @@ function saveCurrentOrderToOngoingRequests(payload = null) {
   const providerCoverageLatitude = Number(providerProfile && providerProfile.coverageLatitude);
   const providerCoverageLongitude = Number(providerProfile && providerProfile.coverageLongitude);
   const providerCoverageAccuracy = Number(providerProfile && providerProfile.coverageAccuracy);
+  const payloadCommande =
+    payload && payload.commande && typeof payload.commande === "object" ? payload.commande : null;
+  const initialRequestStatus = mapCommandeStatusToLocalStatus(
+    (payloadCommande && payloadCommande.statut) || (payload && payload.statut) || "en_attente"
+  );
+  const resolvedProviderEmail = resolveProviderEmailForRequest({
+    providerEmail: providerProfile && providerProfile.email,
+    providerName: providerProfile && providerProfile.name,
+    providerDomain: providerProfile && providerProfile.domain
+  });
   const requestId = buildOngoingRequestId(payload);
   const newEntry = {
     id: requestId,
     clientEmail,
+    clientName:
+      `${String((clientAccount && clientAccount.prenom) || "").trim()} ${String((clientAccount && clientAccount.nom) || "").trim()}`.trim() ||
+      clientEmail,
+    clientImage: String(
+      (clientAccount && (clientAccount.photoProfil || clientAccount.photo || clientAccount.avatarUrl)) || ""
+    ).trim(),
     providerName: String(providerProfile.name || "Technicien").trim() || "Technicien",
     providerImage: String(providerProfile.image || DEFAULT_PROVIDER_CARD_IMAGE).trim() || DEFAULT_PROVIDER_CARD_IMAGE,
     providerPrice: normalizeOngoingRequestPrice(effectivePrice, `${DISTANCE_PRICE_BASE_DH}DH`),
-    providerEmail: String(providerProfile.email || "").trim().toLowerCase(),
+    providerEmail: resolvedProviderEmail,
     providerDomain: String(providerProfile.domain || "").trim(),
     providerCoverageLatitude: Number.isFinite(providerCoverageLatitude) ? providerCoverageLatitude : null,
     providerCoverageLongitude: Number.isFinite(providerCoverageLongitude) ? providerCoverageLongitude : null,
@@ -5925,7 +7733,8 @@ function saveCurrentOrderToOngoingRequests(payload = null) {
     serviceLatitude: isValidLatLngCoordinates(serviceLatitude, serviceLongitude) ? serviceLatitude : null,
     serviceLongitude: isValidLatLngCoordinates(serviceLatitude, serviceLongitude) ? serviceLongitude : null,
     createdAt: new Date().toISOString(),
-    status: "en_cours"
+    status: initialRequestStatus || "en_attente_prestataire",
+    providerDecision: initialRequestStatus === "en_cours" ? "accepte" : "en_attente"
   };
 
   const deduped = [
@@ -5944,10 +7753,732 @@ function saveCurrentOrderToOngoingRequests(payload = null) {
   return newEntry;
 }
 
+function escapeHtmlForChat(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatOrderChatDate(rawDate) {
+  const date = new Date(String(rawDate || ""));
+  if (Number.isNaN(date.getTime())) {
+    return "A l'instant";
+  }
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function setOrderChatFeedback(message = "", type = "neutral") {
+  const targets = [orderChatFeedback, page33ChatFeedback].filter(Boolean);
+  if (!targets.length) {
+    return;
+  }
+
+  targets.forEach((target) => {
+    const baseClass = target === page33ChatFeedback ? "page33-chat-feedback" : "order-chat-feedback";
+    target.className = baseClass;
+    if (type === "error") {
+      target.classList.add("error");
+    } else if (type === "success") {
+      target.classList.add("success");
+    }
+    target.textContent = String(message || "").trim();
+  });
+}
+
+function renderOrderChatMessages(messages = [], currentUser = null) {
+  const containers = [orderChatMessages, page33ChatMessages].filter(Boolean);
+  if (!containers.length) {
+    return;
+  }
+
+  const normalizedCurrentUserId = String((currentUser && (currentUser.id || currentUser.email)) || "")
+    .trim()
+    .toLowerCase();
+  const normalizedCurrentUserEmail = String((currentUser && currentUser.email) || "")
+    .trim()
+    .toLowerCase();
+  const normalizedCurrentSenderType = String((currentUser && currentUser.senderType) || "")
+    .trim()
+    .toLowerCase();
+  const requestId = String(activeOrderChatRequestId || "").trim();
+  const requestEntry =
+    getCurrentParticipantRequestById(requestId) ||
+    getAllClientOngoingRequests().find((entry) => String((entry && entry.id) || "").trim() === requestId) ||
+    null;
+  const dedupeName = (rawValue) => {
+    const value = String(rawValue || "").trim();
+    if (!value) {
+      return "";
+    }
+    const tokens = value.split(/\s+/).filter(Boolean);
+    if (tokens.length === 2 && tokens[0].toLowerCase() === tokens[1].toLowerCase()) {
+      return tokens[0];
+    }
+    return value;
+  };
+  const requestClientEmail = String((requestEntry && requestEntry.clientEmail) || "")
+    .trim()
+    .toLowerCase();
+  const requestProviderEmail = String((requestEntry && requestEntry.providerEmail) || "")
+    .trim()
+    .toLowerCase();
+  const activeClientEmail = getActiveClientEmail();
+  const activeProviderEmail = getActiveProviderEmail();
+  const activeClientAccount = getActiveClientAccount();
+  const activeProviderAccount = getActiveProviderAccount();
+  const activeClientName = buildParticipantDisplayName(
+    activeClientAccount && activeClientAccount.prenom,
+    activeClientAccount && activeClientAccount.nom,
+    activeClientEmail
+  );
+  const activeProviderName = buildParticipantDisplayName(
+    activeProviderAccount && activeProviderAccount.prenom,
+    activeProviderAccount && activeProviderAccount.nom,
+    activeProviderEmail
+  );
+  const requestClientName = dedupeName(String((requestEntry && requestEntry.clientName) || "").trim()) || activeClientName;
+  const requestProviderName =
+    dedupeName(String((requestEntry && requestEntry.providerName) || "").trim()) || activeProviderName;
+
+  const resolveNameFromStoredAccounts = (senderType, senderEmail) => {
+    const normalizedType = String(senderType || "").trim().toLowerCase();
+    const normalizedEmail = String(senderEmail || "").trim().toLowerCase();
+    if (!normalizedEmail) {
+      return "";
+    }
+    if (normalizedType === "client") {
+      const account = findClientAccountByEmail(normalizedEmail);
+      return buildParticipantDisplayName(account && account.prenom, account && account.nom, normalizedEmail);
+    }
+    if (normalizedType === "prestataire") {
+      const account = findProviderAccountByEmail(normalizedEmail);
+      return buildParticipantDisplayName(account && account.prenom, account && account.nom, normalizedEmail);
+    }
+    return "";
+  };
+
+  const inferSenderType = (senderEmail, senderType) => {
+    const normalizedType = String(senderType || "").trim().toLowerCase();
+    if (normalizedType === "client" || normalizedType === "prestataire") {
+      return normalizedType;
+    }
+    const normalizedEmail = String(senderEmail || "").trim().toLowerCase();
+    if (!normalizedEmail) {
+      return "";
+    }
+    if (requestClientEmail && normalizedEmail === requestClientEmail) {
+      return "client";
+    }
+    if (requestProviderEmail && normalizedEmail === requestProviderEmail) {
+      return "prestataire";
+    }
+    if (activeClientEmail && normalizedEmail === activeClientEmail && activeClientEmail !== activeProviderEmail) {
+      return "client";
+    }
+    if (activeProviderEmail && normalizedEmail === activeProviderEmail && activeClientEmail !== activeProviderEmail) {
+      return "prestataire";
+    }
+    return "";
+  };
+
+  const resolveDisplayName = (entry, senderEmail, senderType) => {
+    const normalizedType = String(senderType || "").trim().toLowerCase();
+    const normalizedEmail = String(senderEmail || "").trim().toLowerCase();
+    const rawSenderName = dedupeName(String((entry && entry.senderName) || "").trim());
+    const accountName = dedupeName(resolveNameFromStoredAccounts(normalizedType, normalizedEmail));
+
+    if (normalizedType === "client") {
+      if (requestClientEmail && normalizedEmail === requestClientEmail && requestClientName) {
+        return requestClientName;
+      }
+      if (normalizedEmail && normalizedEmail === activeClientEmail && activeClientName) {
+        return dedupeName(activeClientName);
+      }
+      return accountName || requestClientName || rawSenderName || normalizedEmail || "Client";
+    }
+    if (normalizedType === "prestataire") {
+      if (requestProviderEmail && normalizedEmail === requestProviderEmail && requestProviderName) {
+        return requestProviderName;
+      }
+      if (normalizedEmail && normalizedEmail === activeProviderEmail && activeProviderName) {
+        return dedupeName(activeProviderName);
+      }
+      return accountName || requestProviderName || rawSenderName || normalizedEmail || "Prestataire";
+    }
+    return rawSenderName || normalizedEmail || "Utilisateur";
+  };
+  const rows = Array.isArray(messages) ? messages : [];
+  const sanitizedRows = rows.filter((entry) => String((entry && entry.message) || "").trim().length > 0);
+  if (!sanitizedRows.length) {
+    containers.forEach((container) => {
+      container.innerHTML = '<div class="order-chat-empty">Aucun message pour cette commande.</div>';
+    });
+    return;
+  }
+
+  const markup = sanitizedRows
+    .map((entry) => {
+      const senderEmail = String((entry && entry.senderEmail) || "").trim().toLowerCase();
+      const senderId = String((entry && (entry.senderId || entry.senderEmail)) || "").trim().toLowerCase();
+      const senderTypeRaw = String((entry && entry.senderType) || "").trim().toLowerCase();
+      const senderType = inferSenderType(senderEmail, senderTypeRaw);
+      const senderName = escapeHtmlForChat(resolveDisplayName(entry, senderEmail, senderType));
+      const messageText = escapeHtmlForChat(entry && entry.message ? entry.message : "");
+      const dateLabel = escapeHtmlForChat(formatOrderChatDate(entry && entry.createdAt));
+      const identityCandidates = new Set();
+      if (normalizedCurrentUserId) {
+        identityCandidates.add(normalizedCurrentUserId);
+      }
+      if (normalizedCurrentUserEmail) {
+        identityCandidates.add(normalizedCurrentUserEmail);
+      }
+      if (normalizedCurrentSenderType === "client" && activeClientEmail) {
+        identityCandidates.add(activeClientEmail);
+      }
+      if (normalizedCurrentSenderType === "prestataire" && activeProviderEmail) {
+        identityCandidates.add(activeProviderEmail);
+      }
+      const isMe = Array.from(identityCandidates).some(
+        (identity) => Boolean(identity) && (senderId === identity || senderEmail === identity)
+      );
+      const rowClass = isMe ? "order-chat-item is-me" : "order-chat-item";
+      return `
+        <div class="${rowClass}">
+          <span class="order-chat-meta">${senderName} • ${dateLabel}</span>
+          <div class="order-chat-bubble">${messageText}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  containers.forEach((container) => {
+    container.innerHTML = markup;
+    container.scrollTop = container.scrollHeight;
+  });
+}
+
+async function fetchOrderChatMessages(requestId, participant) {
+  const normalizedRequestId = String(requestId || "").trim();
+  if (!normalizedRequestId || !participant || !participant.email) {
+    return [];
+  }
+
+  const localRequest = getLocalRequestById(normalizedRequestId);
+  if (localRequest && !canOpenOrderChatForRequestEntry(localRequest)) {
+    removeOrderChatLocalMessagesByRequestId(normalizedRequestId);
+    return [];
+  }
+
+  const canReadLocalFallback = hasParticipantAccessToRequestIdLocally(normalizedRequestId, participant.email);
+  const fallback = canReadLocalFallback ? getOrderChatLocalMessagesByRequestId(normalizedRequestId) : [];
+
+  for (const apiBase of getApiCandidates()) {
+    try {
+      const response = await fetchWithTimeout(
+        `${apiBase}/commandes/${encodeURIComponent(normalizedRequestId)}/chat/messages?participantEmail=${encodeURIComponent(
+          participant.email
+        )}`,
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json" }
+        }
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          return [];
+        }
+        const closedMessage = String((payload && payload.message) || "").trim().toLowerCase();
+        if (response.status === 410 || closedMessage.includes("chat closed")) {
+          removeOrderChatLocalMessagesByRequestId(normalizedRequestId);
+          return [];
+        }
+        throw new Error(payload.message || "Lecture du chat impossible.");
+      }
+
+      const messages = Array.isArray(payload.messages) ? payload.messages : [];
+      messages.forEach((message) => {
+        pushOrderChatLocalMessage({
+          commandeId: normalizedRequestId,
+          senderType: String((message && message.senderType) || "").trim().toLowerCase(),
+          senderId: String((message && (message.senderId || message.senderEmail)) || "").trim().toLowerCase(),
+          senderEmail: String((message && message.senderEmail) || "").trim().toLowerCase(),
+          senderName: String((message && message.senderName) || "").trim(),
+          message: String((message && message.message) || "").trim(),
+          createdAt: String((message && message.createdAt) || new Date().toISOString())
+        });
+      });
+      saveApiBase(apiBase);
+      return messages.length ? messages : fallback;
+    } catch (error) {
+      if (isNetworkError(error)) {
+        continue;
+      }
+      return fallback;
+    }
+  }
+
+  return fallback;
+}
+
+async function sendOrderChatMessage(requestId, participant, rawMessage) {
+  const normalizedRequestId = String(requestId || "").trim();
+  const message = String(rawMessage || "").trim();
+  if (!normalizedRequestId || !participant || !participant.email || !message) {
+    throw new Error("Message invalide.");
+  }
+
+  const localRequest = getLocalRequestById(normalizedRequestId);
+  if (localRequest && !canOpenOrderChatForRequestEntry(localRequest)) {
+    removeOrderChatLocalMessagesByRequestId(normalizedRequestId);
+    throw new Error("Conversation fermee: intervention terminee.");
+  }
+
+  const localEntry = {
+    commandeId: normalizedRequestId,
+    senderType: participant.senderType,
+    senderId: String(participant.id || participant.email || "").trim().toLowerCase(),
+    senderEmail: participant.email,
+    senderName: participant.name,
+    message,
+    createdAt: new Date().toISOString()
+  };
+
+  for (const apiBase of getApiCandidates()) {
+    try {
+      const response = await fetchWithTimeout(`${apiBase}/commandes/${encodeURIComponent(normalizedRequestId)}/chat/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          participantEmail: participant.email,
+          senderType: participant.senderType,
+          senderId: String(participant.id || participant.email || "").trim().toLowerCase(),
+          senderName: participant.name,
+          message
+        })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const closedMessage = String((payload && payload.message) || "").trim().toLowerCase();
+        if (response.status === 410 || closedMessage.includes("chat closed")) {
+          removeOrderChatLocalMessagesByRequestId(normalizedRequestId);
+          throw new Error("Conversation fermee: intervention terminee.");
+        }
+        throw new Error(payload.message || "Envoi du message impossible.");
+      }
+
+      const saved = payload && payload.chatMessage ? payload.chatMessage : null;
+      pushOrderChatLocalMessage({
+        commandeId: normalizedRequestId,
+        senderType: String((saved && saved.senderType) || participant.senderType).trim().toLowerCase(),
+        senderId: String((saved && (saved.senderId || saved.senderEmail)) || participant.id || participant.email)
+          .trim()
+          .toLowerCase(),
+        senderEmail: String((saved && saved.senderEmail) || participant.email).trim().toLowerCase(),
+        senderName: String((saved && saved.senderName) || participant.name).trim(),
+        message: String((saved && saved.message) || message).trim(),
+        createdAt: String((saved && saved.createdAt) || new Date().toISOString())
+      });
+      saveApiBase(apiBase);
+      return true;
+    } catch (error) {
+      if (isNetworkError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  pushOrderChatLocalMessage(localEntry);
+  return false;
+}
+
+function stopOrderChatPolling() {
+  if (activeOrderChatPollTimer) {
+    clearInterval(activeOrderChatPollTimer);
+    activeOrderChatPollTimer = null;
+  }
+}
+
+function closeOrderChatModal() {
+  stopOrderChatPolling();
+  activeOrderChatRequestId = "";
+  activeOrderChatParticipant = null;
+  activeOrderChatReturnPage = "page19";
+  if (orderChatOverlay) {
+    orderChatOverlay.hidden = true;
+  }
+  [orderChatMessages, page33ChatMessages].filter(Boolean).forEach((target) => {
+    target.innerHTML = "";
+  });
+  [orderChatInput, page33ChatInput].filter(Boolean).forEach((target) => {
+    target.value = "";
+  });
+  applyPage33ChatHeader("");
+  setOrderChatFeedback("");
+}
+
+async function refreshOrderChatMessages() {
+  if (!activeOrderChatRequestId || !activeOrderChatParticipant) {
+    return;
+  }
+
+  try {
+    await syncOngoingRequestsFromBackendForActiveParticipant();
+  } catch (error) {
+    // keep local fallback when backend is temporarily unreachable
+  }
+
+  const requestEntry = getLocalRequestById(activeOrderChatRequestId);
+  if (requestEntry && !canOpenOrderChatForRequestEntry(requestEntry)) {
+    removeOrderChatLocalMessagesByRequestId(activeOrderChatRequestId);
+    stopOrderChatPolling();
+    const activeRoleForChat = resolveActiveProfileTypeForChat();
+    let targetPage = activeOrderChatReturnPage || (activeRoleForChat === "prestataire" ? "page10" : "page19");
+    if (activeRoleForChat === "prestataire" && targetPage === "page19") {
+      targetPage = "page10";
+    }
+    closeOrderChatModal();
+    goTo(targetPage);
+    window.alert("Le chat est ferme: prestation terminee et notee.");
+    return;
+  }
+
+  const messages = await fetchOrderChatMessages(activeOrderChatRequestId, activeOrderChatParticipant);
+  renderOrderChatMessages(messages, activeOrderChatParticipant);
+  markOrderChatSeen(activeOrderChatRequestId, getLatestOrderMessageTimestamp(messages) || Date.now());
+  syncChatUnreadBadges().catch(() => {
+    return;
+  });
+}
+
+async function openOrderChatModalByRequestId(requestId) {
+  if (!ORDER_CHAT_ENABLED) {
+    return;
+  }
+
+  const normalizedRequestId = String(requestId || "").trim();
+  if (!normalizedRequestId) {
+    return;
+  }
+
+  const activeScreen = document.querySelector(".screen.active");
+  const sourcePageForChat = getPageClassFromElement(activeScreen) || String(activeOrderChatReturnPage || "").trim();
+  const inferredRole = resolveProfileRoleFromPageClass(sourcePageForChat);
+  if (inferredRole) {
+    setActiveProfileRole(inferredRole);
+    lastResolvedProfileType = inferredRole;
+  }
+
+  const participant = getActiveChatParticipant();
+  if (!participant) {
+    setOrderChatFeedback("Connectez-vous pour utiliser le chat.", "error");
+    return;
+  }
+
+  try {
+    await syncOngoingRequestsFromBackendForActiveParticipant();
+  } catch (error) {
+    // keep local fallback when backend is temporarily unreachable
+  }
+
+  let hasAccess = hasParticipantAccessToRequestIdLocally(normalizedRequestId, participant.email);
+  if (!hasAccess) {
+    hasAccess = hasParticipantAccessToRequestIdLocally(normalizedRequestId, participant.email);
+  }
+  if (!hasAccess) {
+    setOrderChatFeedback("Acces refuse: cette discussion n'est pas liee a votre compte.", "error");
+    return;
+  }
+
+  const localRequest = getLocalRequestById(normalizedRequestId);
+  if (localRequest && !canOpenOrderChatForRequestEntry(localRequest)) {
+    removeOrderChatLocalMessagesByRequestId(normalizedRequestId);
+    setOrderChatFeedback("Le chat est ferme pour cette demande.", "error");
+    return;
+  }
+
+  const activeRoleForChat = inferredRole || resolveActiveProfileTypeForChat();
+  const defaultReturnPage = activeRoleForChat === "prestataire" ? "page10" : "page19";
+  activeOrderChatReturnPage = getPageClassFromElement(activeScreen) || defaultReturnPage;
+  if (activeRoleForChat === "prestataire" && activeOrderChatReturnPage === "page19") {
+    activeOrderChatReturnPage = "page10";
+  }
+  goTo("page33");
+  activeOrderChatRequestId = normalizedRequestId;
+  activeOrderChatParticipant = participant;
+  applyPage33ChatHeader(normalizedRequestId);
+  setOrderChatFeedback("Chargement des messages...");
+  const messages = await fetchOrderChatMessages(normalizedRequestId, participant);
+  renderOrderChatMessages(messages, participant);
+  markOrderChatSeen(normalizedRequestId, getLatestOrderMessageTimestamp(messages) || Date.now());
+  syncChatUnreadBadges().catch(() => {
+    return;
+  });
+  setOrderChatFeedback("");
+
+  stopOrderChatPolling();
+  activeOrderChatPollTimer = setInterval(() => {
+    refreshOrderChatMessages().catch(() => {
+      return;
+    });
+  }, 1200);
+}
+
+function getCurrentParticipantOngoingRequests() {
+  const activeRole = resolveActiveProfileTypeForChat();
+  const activeClientEmail = getActiveClientEmail();
+  const activeProviderEmail = getActiveProviderEmail();
+
+  if (activeRole === "client" && activeClientEmail) {
+    return getClientOngoingRequestsForEmail(activeClientEmail);
+  }
+  if (activeRole === "prestataire" && activeProviderEmail) {
+    return getProviderOngoingRequestsForEmail(activeProviderEmail);
+  }
+  if (activeClientEmail && !activeProviderEmail) {
+    return getClientOngoingRequestsForEmail(activeClientEmail);
+  }
+  if (activeProviderEmail && !activeClientEmail) {
+    return getProviderOngoingRequestsForEmail(activeProviderEmail);
+  }
+
+  return [];
+}
+
+function resolveDefaultOrderChatRequestId() {
+  return resolveSelectedChatEligibleRequestId();
+}
+
+function getCurrentParticipantRequestById(requestId) {
+  const normalizedRequestId = String(requestId || "").trim();
+  if (!normalizedRequestId) {
+    return null;
+  }
+  return (
+    getCurrentParticipantOngoingRequests().find(
+      (entry) => String((entry && entry.id) || "").trim() === normalizedRequestId
+    ) || null
+  );
+}
+
+function applyPage33ChatHeader(requestId) {
+  const dedupeName = (rawName, fallback) => {
+    const value = String(rawName || "").trim();
+    if (!value) {
+      return String(fallback || "").trim();
+    }
+    const tokens = value.split(/\s+/).filter(Boolean);
+    if (tokens.length === 2 && tokens[0].toLowerCase() === tokens[1].toLowerCase()) {
+      return tokens[0];
+    }
+    return value;
+  };
+  if (page33ChatAvatar) {
+    page33ChatAvatar.src = DEFAULT_USER_AVATAR_URL;
+    page33ChatAvatar.alt = "Photo profil";
+  }
+  if (page33ChatSubtitle) {
+    page33ChatSubtitle.textContent = "Discussion client/prestataire";
+  }
+
+  const participant = getActiveChatParticipant();
+  const requestEntry = getCurrentParticipantRequestById(requestId);
+  if (!participant || !requestEntry) {
+    return;
+  }
+
+  const participantType = String(participant.senderType || "").trim().toLowerCase();
+  const defaultName = participantType === "client" ? "Prestataire" : "Client";
+  let counterpartName = defaultName;
+  let counterpartPhoto = "";
+
+  if (participantType === "client") {
+    counterpartName = dedupeName(requestEntry && requestEntry.providerName, defaultName);
+    counterpartPhoto = String((requestEntry && requestEntry.providerImage) || "").trim();
+  } else {
+    counterpartName = dedupeName(
+      requestEntry && (requestEntry.clientName || requestEntry.clientEmail),
+      defaultName
+    );
+    const clientEmail = String((requestEntry && requestEntry.clientEmail) || "").trim().toLowerCase();
+    const clientAccount = findClientAccountByEmail(clientEmail);
+    counterpartPhoto = String(
+      (clientAccount && (clientAccount.photoProfil || clientAccount.photo || clientAccount.avatarUrl)) || ""
+    ).trim();
+  }
+
+  if (page33ChatSubtitle) {
+    page33ChatSubtitle.textContent = counterpartName || defaultName;
+  }
+  if (page33ChatAvatar) {
+    page33ChatAvatar.src = resolveAccountPhotoSrc(counterpartPhoto);
+    page33ChatAvatar.alt = `Photo ${counterpartName || defaultName}`;
+  }
+}
+
+function getLatestOrderMessageTimestamp(messages = []) {
+  const rows = Array.isArray(messages) ? messages : [];
+  let latest = 0;
+  rows.forEach((entry) => {
+    const stamp = Date.parse(String((entry && entry.createdAt) || "")) || 0;
+    if (stamp > latest) {
+      latest = stamp;
+    }
+  });
+  return latest;
+}
+
+async function syncChatUnreadBadges() {
+  const participant = getActiveChatParticipant();
+  if (!participant || !participant.email) {
+    if (openPage8ChatBtn) {
+      openPage8ChatBtn.classList.remove("has-unread");
+    }
+    if (openPage33ChatBtn) {
+      openPage33ChatBtn.classList.remove("has-unread");
+    }
+    if (openPage20ChatBtn) {
+      openPage20ChatBtn.classList.remove("has-unread");
+    }
+    return;
+  }
+
+  const requests = getCurrentParticipantOngoingRequests()
+    .filter((entry) => canOpenOrderChatForRequestEntry(entry))
+    .slice(0, 10);
+  if (!requests.length) {
+    if (openPage8ChatBtn) {
+      openPage8ChatBtn.classList.remove("has-unread");
+    }
+    if (openPage33ChatBtn) {
+      openPage33ChatBtn.classList.remove("has-unread");
+    }
+    if (openPage20ChatBtn) {
+      openPage20ChatBtn.classList.remove("has-unread");
+    }
+    return;
+  }
+
+  let hasUnread = false;
+  for (const request of requests) {
+    const requestId = String((request && request.id) || "").trim();
+    if (!requestId) {
+      continue;
+    }
+    const messages = await fetchOrderChatMessages(requestId, participant);
+    const latestMessageTs = getLatestOrderMessageTimestamp(messages);
+    if (!latestMessageTs) {
+      continue;
+    }
+    const seenTs = getOrderChatLastSeen(requestId);
+    if (latestMessageTs > seenTs) {
+      hasUnread = true;
+      break;
+    }
+  }
+
+  if (openPage8ChatBtn) {
+    openPage8ChatBtn.classList.toggle("has-unread", hasUnread);
+  }
+  if (openPage33ChatBtn) {
+    openPage33ChatBtn.classList.toggle("has-unread", hasUnread);
+  }
+  if (openPage20ChatBtn) {
+    openPage20ChatBtn.classList.toggle("has-unread", hasUnread);
+  }
+}
+
+function ensureChatBadgePolling() {
+  if (chatBadgePollTimer) {
+    return;
+  }
+  chatBadgePollTimer = setInterval(() => {
+    syncChatUnreadBadges().catch(() => {
+      return;
+    });
+  }, 2500);
+}
+
+function syncPage8ChatFabState() {
+  if (!openPage8ChatBtn) {
+    return;
+  }
+
+  openPage8ChatBtn.hidden = true;
+  openPage8ChatBtn.disabled = true;
+  openPage8ChatBtn.setAttribute("aria-disabled", "true");
+  openPage8ChatBtn.classList.remove("has-unread");
+  if (openPage33ChatBtn) {
+    openPage33ChatBtn.classList.remove("has-unread");
+  }
+  if (openPage20ChatBtn) {
+    openPage20ChatBtn.classList.remove("has-unread");
+  }
+}
+
+function syncPage19ChatFabState() {
+  if (!openPage33ChatBtn) {
+    return;
+  }
+  const requestId = resolveSelectedChatEligibleRequestId();
+  const shouldEnable = Boolean(ORDER_CHAT_ENABLED && requestId);
+  openPage33ChatBtn.hidden = !shouldEnable;
+  openPage33ChatBtn.disabled = !shouldEnable;
+  openPage33ChatBtn.setAttribute("aria-disabled", String(!shouldEnable));
+  if (!shouldEnable) {
+    openPage33ChatBtn.classList.remove("has-unread");
+  }
+}
+
+function syncPage20ChatFabState() {
+  if (!openPage20ChatBtn) {
+    return;
+  }
+  const requestId = resolveSelectedChatEligibleRequestId();
+  const shouldEnable = Boolean(ORDER_CHAT_ENABLED && requestId);
+  openPage20ChatBtn.hidden = !shouldEnable;
+  openPage20ChatBtn.disabled = !shouldEnable;
+  openPage20ChatBtn.setAttribute("aria-disabled", String(!shouldEnable));
+  if (!shouldEnable) {
+    openPage20ChatBtn.classList.remove("has-unread");
+  }
+}
+
+async function openDefaultOrderChatConversation() {
+  if (!ORDER_CHAT_ENABLED) {
+    return;
+  }
+
+  try {
+    await syncOngoingRequestsFromBackendForActiveParticipant();
+  } catch (error) {
+    // fallback to local state if backend is temporarily unavailable
+  }
+  const requestId = String(resolveDefaultOrderChatRequestId() || "").trim();
+  if (!requestId) {
+    setOrderChatFeedback("Aucune commande active pour ouvrir le chat.", "error");
+    return;
+  }
+  await openOrderChatModalByRequestId(requestId);
+}
+
 function renderPage10OngoingRequests() {
   if (!page10OngoingRequestsList) {
     return;
   }
+  syncPage8ChatFabState();
+  syncPage19ChatFabState();
 
   const escapeHtml = (value) =>
     String(value || "")
@@ -5955,11 +8486,18 @@ function renderPage10OngoingRequests() {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  const fallbackCardImage = escapeHtml(resolveAccountPhotoSrc(DEFAULT_PROVIDER_CARD_IMAGE));
 
   const activeClientEmail = getActiveClientEmail();
-  const ongoingRequests = getClientOngoingRequestsForEmail(activeClientEmail);
+  const activeProviderEmail = getActiveProviderEmail();
+  const isProviderSession = isProviderRequestSessionActive();
+  const isClientSession = !isProviderSession;
+  const sessionEmail = isProviderSession ? activeProviderEmail : activeClientEmail;
+  const ongoingRequests = isProviderSession
+    ? getProviderOngoingRequestsForEmail(activeProviderEmail)
+    : getClientOngoingRequestsForEmail(activeClientEmail);
 
-  if (!activeClientEmail || !ongoingRequests.length) {
+  if (!sessionEmail || !ongoingRequests.length) {
     page10OngoingRequestsList.innerHTML =
       '<div class="page10-ongoing-empty">Aucune demande en cours pour le moment.</div>';
     return;
@@ -5967,29 +8505,92 @@ function renderPage10OngoingRequests() {
 
   const cardsMarkup = ongoingRequests
     .map((entry) => {
-      const providerName = escapeHtml(entry.providerName || "Technicien");
+      const requestStatus = normalizeRequestLifecycleStatus(entry && entry.status, "en_cours");
+      const counterpartName = isClientSession
+        ? String((entry && entry.providerName) || "Prestataire")
+        : String((entry && (entry.clientName || entry.clientEmail)) || "Client");
+      const providerName = escapeHtml(counterpartName || "Interlocuteur");
       const providerDate = escapeHtml(formatOngoingRequestDateLabel(entry.createdAt));
       const providerPrice = escapeHtml(normalizeOngoingRequestPrice(entry.providerPrice, "200DH"));
-      const providerImage = escapeHtml(resolveAccountPhotoSrc(entry.providerImage || DEFAULT_PROVIDER_CARD_IMAGE));
+      const clientEmail = String((entry && entry.clientEmail) || "").trim().toLowerCase();
+      const clientAccount = isProviderSession ? findClientAccountByEmail(clientEmail) : null;
+      const counterpartImageSource = isProviderSession
+        ? String(
+            (entry && (entry.clientImage || entry.clientPhoto)) ||
+              (clientAccount && (clientAccount.photoProfil || clientAccount.photo || clientAccount.avatarUrl)) ||
+              ""
+          ).trim()
+        : String((entry && entry.providerImage) || "").trim();
+      const providerImage = escapeHtml(
+        resolveAccountPhotoSrc(counterpartImageSource || DEFAULT_PROVIDER_CARD_IMAGE)
+      );
       const requestId = escapeHtml(entry.id || "");
+      const canOpenChatForRequest = canOpenOrderChatForRequestEntry(entry);
+      const providerChatButtonMarkup =
+        isProviderSession && canOpenChatForRequest
+          ? `
+            <button
+              class="page10-request-chat-btn"
+              type="button"
+              data-request-id="${requestId}"
+              aria-label="Ouvrir le chat avec ce client"
+              title="Ouvrir le chat"
+            >
+              <span aria-hidden="true">&#128172;</span>
+            </button>
+          `
+          : "";
+      const cancelButtonMarkup = isClientSession
+        ? `<button class="button4 page10-request-cancel-btn" type="button" data-request-id="${requestId}">
+              <span class="text6">Annuler</span>
+            </button>`
+        : "";
+      const providerDecisionButtonsMarkup =
+        isProviderSession && requestStatus === "en_attente_prestataire"
+          ? `
+            <button class="button4 page10-request-reject-btn" type="button" data-request-id="${requestId}">
+              <span class="text6">Refuser</span>
+            </button>
+            <button class="button5 page10-request-accept-btn" type="button" data-request-id="${requestId}">
+              <span class="text8">Accepter</span>
+            </button>
+          `
+          : "";
+      const continueButtonMarkup = isClientSession
+        ? `
+            <button class="button5 page10-request-continue-btn" type="button" data-request-id="${requestId}">
+              <span class="text8">Continuer</span>
+            </button>
+          `
+        : "";
+      const providerPendingLabelMarkup =
+        isProviderSession && requestStatus === "en_attente_prestataire"
+          ? '<span class="text5">En attente de votre reponse</span>'
+          : "";
 
       return `
         <div class="row-view3">
-          <img src="${providerImage}" alt="Service ${providerName}" class="image2">
+          <img
+            src="${providerImage}"
+            alt="Service ${providerName}"
+            class="image2"
+            onerror="this.onerror=null;this.src='${fallbackCardImage}'"
+          >
           <div class="column">
-            <span class="text4">${providerName}</span>
+            <div class="page10-request-head-row">
+              <span class="text4">${providerName}</span>
+              ${providerChatButtonMarkup}
+            </div>
             <span class="text5">${providerDate}</span>
-            <button class="button4 page10-request-cancel-btn" type="button" data-request-id="${requestId}">
-              <span class="text6">Annuler</span>
-            </button>
+            ${providerPendingLabelMarkup}
+            ${cancelButtonMarkup}
           </div>
           <div class="column2">
             <div class="view2">
               <span class="text7">${providerPrice}</span>
             </div>
-            <button class="button5 page10-request-continue-btn" type="button" data-request-id="${requestId}">
-              <span class="text8">Continuer</span>
-            </button>
+            ${providerDecisionButtonsMarkup}
+            ${continueButtonMarkup}
           </div>
         </div>
         <div class="box3"></div>
@@ -6005,6 +8606,74 @@ function buildCommandeServiceLabel(profile) {
   return rawDomain || "service";
 }
 
+function normalizeProviderLookupToken(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function doesOrderProviderMatchCandidate(profile, candidate) {
+  if (!profile || !candidate) {
+    return false;
+  }
+
+  const profileName = normalizeProviderLookupToken(profile.name);
+  const candidateName = normalizeProviderLookupToken(
+    candidate.name || `${String(candidate.prenom || "").trim()} ${String(candidate.nom || "").trim()}`
+  );
+  const candidateEmail = String((candidate && candidate.email) || "").trim().toLowerCase();
+  if (!profileName || !candidateName || !candidateEmail) {
+    return false;
+  }
+
+  const profileDomain = normalizeProviderCategory(profile.domain || "");
+  const candidateDomain = normalizeProviderCategory(
+    String((candidate && (candidate.domain || candidate.domaine || candidate.categorie)) || "").trim()
+  );
+  if (profileDomain && candidateDomain && profileDomain !== candidateDomain) {
+    return false;
+  }
+
+  if (profileName === candidateName || profileName.includes(candidateName) || candidateName.includes(profileName)) {
+    return true;
+  }
+
+  const profileTokens = profileName.split(" ").filter(Boolean);
+  const candidateTokens = candidateName.split(" ").filter(Boolean);
+  if (!profileTokens.length || !candidateTokens.length) {
+    return false;
+  }
+
+  const firstProfileToken = profileTokens[0];
+  return Boolean(firstProfileToken && candidateTokens.includes(firstProfileToken));
+}
+
+function resolveProviderEmailForOrder(profile) {
+  const directEmail = String((profile && profile.email) || "").trim().toLowerCase();
+  if (directEmail) {
+    return directEmail;
+  }
+
+  const localMatch = getProviderAccounts().find((account) =>
+    doesOrderProviderMatchCandidate(profile, account)
+  );
+  if (localMatch && localMatch.email) {
+    return String(localMatch.email || "").trim().toLowerCase();
+  }
+
+  const directoryMatch = getVerifiedProviderDirectory()
+    .map((entry) => buildVerifiedProviderDirectoryItem(entry))
+    .find((entry) => doesOrderProviderMatchCandidate(profile, entry));
+  if (directoryMatch && directoryMatch.email) {
+    return String(directoryMatch.email || "").trim().toLowerCase();
+  }
+
+  return "";
+}
+
 async function submitCommandeFromCurrentContext(locationData = null) {
   const clientAccount = getActiveClientAccount();
   if (!clientAccount || !clientAccount.email) {
@@ -6015,10 +8684,22 @@ async function submitCommandeFromCurrentContext(locationData = null) {
   if (!providerProfile || !providerProfile.name) {
     throw new Error("Prestataire introuvable. Ouvrez un profil puis réessayez.");
   }
+  const resolvedProviderEmail = resolveProviderEmailForOrder(providerProfile);
+  if (resolvedProviderEmail) {
+    currentOrderProviderProfile = {
+      ...(currentOrderProviderProfile || {}),
+      ...providerProfile,
+      email: resolvedProviderEmail
+    };
+  }
 
   const payloadBody = {
     clientEmail: String(clientAccount.email || "").trim().toLowerCase(),
-    prestataireEmail: String(providerProfile.email || "").trim().toLowerCase(),
+    clientName: `${String(clientAccount.prenom || "").trim()} ${String(clientAccount.nom || "").trim()}`.trim(),
+    clientPrenom: String(clientAccount.prenom || "").trim(),
+    clientNom: String(clientAccount.nom || "").trim(),
+    clientTelephone: String(clientAccount.telephone || "").trim(),
+    prestataireEmail: resolvedProviderEmail,
     prestataireNom: String(providerProfile.name || "").trim(),
     domaine: String(providerProfile.domain || "").trim(),
     service: buildCommandeServiceLabel(providerProfile),
@@ -6187,10 +8868,10 @@ if (loginBtn) {
       } catch (error) {
         // noop
       }
-      saveAdminSession(email);
+      saveAdminSession(email, password);
       setLoginFeedback("Connexion admin reussie. Redirection...", "success");
       window.setTimeout(() => {
-        window.location.href = buildAdminDashboardUrl();
+        window.location.href = buildAdminDashboardUrl(email);
       }, 180);
       return;
     }
@@ -6198,23 +8879,70 @@ if (loginBtn) {
     const localClientAccount = findClientAccountByEmail(email);
     const localProviderAccount = findProviderAccountByEmail(email);
 
-    if (localClientAccount && localClientAccount.password && localClientAccount.password !== password) {
-      setLoginFeedback("Mot de passe incorrect.", "error");
-      return;
-    }
-
-    if (localProviderAccount && localProviderAccount.password && localProviderAccount.password !== password) {
-      setLoginFeedback("Mot de passe incorrect.", "error");
-      return;
-    }
+    const localClientPasswordMismatch =
+      Boolean(localClientAccount && localClientAccount.password) && localClientAccount.password !== password;
+    const localProviderPasswordMismatch =
+      Boolean(localProviderAccount && localProviderAccount.password) && localProviderAccount.password !== password;
 
     const completeLogin = (profileType, payload = null, options = {}) => {
       const shouldOpenFingerprint = Boolean(options.shouldOpenFingerprint);
+      const normalizedProfileType = String(profileType || "").trim().toLowerCase();
       clearPendingVerification();
       activateProfileSession(profileType, email, payload);
       setLoginFeedback("Connexion reussie.", "success");
       previousPageClass = "page4";
-      goTo(shouldOpenFingerprint ? "page30" : "page8");
+      if (shouldOpenFingerprint) {
+        goTo("page30");
+        return;
+      }
+      goTo(normalizedProfileType === "prestataire" ? "page10" : "page8");
+    };
+
+    const openClientWaitingAccess = (clientPayload = null) => {
+      const nextClientPayload = {
+        ...(clientPayload || {}),
+        email
+      };
+      const clientStatus = normalizeStatus(
+        (nextClientPayload && nextClientPayload.statutVerification) || "en_attente"
+      );
+      activateProfileSession("client", email, nextClientPayload);
+      savePendingVerification("client", email);
+      setLoginFeedback(
+        clientStatus === "refuse"
+          ? "Votre profil client a ete refuse par l'administrateur."
+          : "Votre dossier client est en attente de validation admin.",
+        "error"
+      );
+      showSubmissionWaitingPage("client", clientStatus || "en_attente");
+    };
+
+    const resolveClientLoginPayload = async (fallbackPayload = null) => {
+      const basePayload = fallbackPayload && typeof fallbackPayload === "object" ? { ...fallbackPayload } : null;
+
+      try {
+        const remotePayload = await fetchVerificationStatusByType("client", email, { allowNotFound: true });
+        if (remotePayload) {
+          return {
+            ...(basePayload || {}),
+            ...remotePayload,
+            email
+          };
+        }
+      } catch (error) {
+        if (!basePayload || !isNetworkError(error)) {
+          throw error;
+        }
+      }
+
+      if (basePayload) {
+        return {
+          ...basePayload,
+          email
+        };
+      }
+
+      return null;
     };
 
     const resolveProviderLoginPayload = async (fallbackPayload = null) => {
@@ -6248,12 +8976,17 @@ if (loginBtn) {
     setLoginFeedback("Connexion en cours...", "neutral");
 
     try {
-      if (localClientAccount) {
-        completeLogin("client", localClientAccount);
+      if (localClientAccount && !localClientPasswordMismatch) {
+        const clientPayload = await resolveClientLoginPayload(localClientAccount);
+        if (!canClientContinueAfterAdminApproval(clientPayload && clientPayload.statutVerification, clientPayload)) {
+          openClientWaitingAccess(clientPayload || localClientAccount);
+          return;
+        }
+        completeLogin("client", clientPayload || localClientAccount);
         return;
       }
 
-      if (localProviderAccount) {
+      if (localProviderAccount && !localProviderPasswordMismatch) {
         const providerPayload = await resolveProviderLoginPayload(localProviderAccount);
         const shouldOpenCoverageStep = shouldOpenProviderCoverageStep(
           "prestataire",
@@ -6271,11 +9004,16 @@ if (loginBtn) {
 
       const clientPayload = await fetchVerificationStatusByType("client", email, { allowNotFound: true });
       if (clientPayload) {
-        completeLogin("client", {
+        const nextClientPayload = {
           ...clientPayload,
           email,
           password
-        });
+        };
+        if (!canClientContinueAfterAdminApproval(nextClientPayload.statutVerification, nextClientPayload)) {
+          openClientWaitingAccess(nextClientPayload);
+          return;
+        }
+        completeLogin("client", nextClientPayload);
         return;
       }
 
@@ -6299,6 +9037,11 @@ if (loginBtn) {
         return;
       }
 
+      if (localClientPasswordMismatch || localProviderPasswordMismatch) {
+        setLoginFeedback("Mot de passe incorrect.", "error");
+        return;
+      }
+
       setLoginFeedback("Aucun compte client ou prestataire trouvé avec cet email.", "error");
     } catch (error) {
       if (isNetworkError(error)) {
@@ -6312,6 +9055,14 @@ if (loginBtn) {
 
 if (toFrame5Btn) {
   toFrame5Btn.addEventListener("click", () => {
+    clearPendingVerification();
+    try {
+      localStorage.removeItem(ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY);
+      localStorage.removeItem(ACTIVE_PROVIDER_ACCOUNT_STORAGE_KEY);
+    } catch (error) {
+      // noop
+    }
+    applyActiveUserProfile();
     previousPageClass = "page4";
     goTo("page6");
   });
@@ -6321,6 +9072,27 @@ if (backTo4Btn) {
   backTo4Btn.addEventListener("click", () => {
     const targetPage = previousPageClass && previousPageClass !== "page5" ? previousPageClass : "page4";
     goTo(targetPage);
+  });
+}
+
+function setLoginPasswordVisibility(isVisible) {
+  if (!loginPasswordInput || !loginPasswordToggleBtn) return;
+  loginPasswordInput.type = isVisible ? "text" : "password";
+  loginPasswordToggleBtn.classList.toggle("is-visible", isVisible);
+  loginPasswordToggleBtn.setAttribute("aria-pressed", String(isVisible));
+  loginPasswordToggleBtn.setAttribute(
+    "aria-label",
+    isVisible ? "Masquer le mot de passe" : "Afficher le mot de passe"
+  );
+}
+
+if (loginPasswordInput && loginPasswordToggleBtn) {
+  setLoginPasswordVisibility(false);
+
+  loginPasswordToggleBtn.addEventListener("click", () => {
+    const isVisible = loginPasswordInput.type === "text";
+    setLoginPasswordVisibility(!isVisible);
+    loginPasswordInput.focus();
   });
 }
 
@@ -6403,10 +9175,12 @@ if (signupSubmitBtn) {
   signupSubmitBtn.addEventListener("click", async () => {
     const fullName = signupNameInput ? signupNameInput.value.trim() : "";
     const password = signupPasswordInput ? signupPasswordInput.value.trim() : "";
-    const email = signupEmailInput ? signupEmailInput.value.trim() : "";
+    const email = signupEmailInput ? signupEmailInput.value.trim().toLowerCase() : "";
     const telephone = signupPhoneInput ? signupPhoneInput.value.trim() : "";
     const dateDeNaissance = signupBirthInput ? signupBirthInput.value.trim() : "";
     const cinFile = signupCinUpload && signupCinUpload.files ? signupCinUpload.files[0] : null;
+    const profileFile = signupPhotoUpload && signupPhotoUpload.files ? signupPhotoUpload.files[0] : null;
+    let profilePreviewDataUrl = "";
     const { nom, prenom } = splitClientName(fullName);
 
     if (!fullName || !password || !email || !telephone || !dateDeNaissance || !cinFile) {
@@ -6421,8 +9195,23 @@ if (signupSubmitBtn) {
 
     signupSubmitBtn.disabled = true;
     setSignupFeedback("Inscription client en cours...", "neutral");
+    clearPendingVerification();
+    try {
+      localStorage.removeItem(ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY);
+      localStorage.removeItem(ACTIVE_PROVIDER_ACCOUNT_STORAGE_KEY);
+    } catch (error) {
+      // noop
+    }
 
     try {
+      if (profileFile) {
+        try {
+          profilePreviewDataUrl = await readFileAsDataUrl(profileFile);
+        } catch (error) {
+          profilePreviewDataUrl = "";
+        }
+      }
+
       let result = null;
       let lastNetworkError = null;
 
@@ -6435,6 +9224,9 @@ if (signupSubmitBtn) {
         payload.append("password", password);
         payload.append("dateDeNaissance", dateDeNaissance);
         payload.append("cinImage", cinFile);
+        if (profileFile) {
+          payload.append("photoProfil", profileFile);
+        }
         return payload;
       };
 
@@ -6447,6 +9239,10 @@ if (signupSubmitBtn) {
 
           const payloadResult = await response.json().catch(() => ({}));
           if (!response.ok) {
+            if (isRetryableApiCandidateResponse(response, payloadResult)) {
+              lastNetworkError = new Error("API candidate incompatible pour l'inscription client.");
+              continue;
+            }
             throw new Error(payloadResult.message || "Inscription client impossible pour le moment.");
           }
 
@@ -6468,7 +9264,7 @@ if (signupSubmitBtn) {
       }
 
       const savedClient = (result && result.client) || {};
-      upsertClientAccount({
+      const nextClientAccount = {
         email,
         password,
         nom,
@@ -6476,8 +9272,13 @@ if (signupSubmitBtn) {
         telephone,
         dateDeNaissance: String(savedClient.dateDeNaissance || dateDeNaissance || ""),
         age: Number.isFinite(Number(savedClient.age)) ? Number(savedClient.age) : null,
-        cinImage: String(savedClient.cinImage || "")
-      });
+        cinImage: String(savedClient.cinImage || ""),
+        photoProfil: String(savedClient.photoProfil || profilePreviewDataUrl || ""),
+        statutVerification: String(savedClient.statutVerification || "en_attente").toLowerCase()
+      };
+      upsertClientAccount(nextClientAccount);
+      setActiveClientAccount(nextClientAccount);
+      applyActiveUserProfile();
       savePendingVerification("client", email);
       setSignupFeedback("Compte client cree avec succes.", "success");
 
@@ -6487,6 +9288,7 @@ if (signupSubmitBtn) {
       if (signupPhoneInput) signupPhoneInput.value = "";
       if (signupBirthInput) signupBirthInput.value = "";
       if (signupCinUpload) signupCinUpload.value = "";
+      if (signupPhotoUpload) signupPhotoUpload.value = "";
 
       previousPageClass = "page5";
       showSubmissionWaitingPage("client");
@@ -6506,12 +9308,13 @@ if (providerSignupSubmitBtn) {
   providerSignupSubmitBtn.addEventListener("click", async () => {
     const nom = providerSignupLastNameInput ? providerSignupLastNameInput.value.trim() : "";
     const prenom = providerSignupFirstNameInput ? providerSignupFirstNameInput.value.trim() : "";
-    const email = providerSignupEmailInput ? providerSignupEmailInput.value.trim() : "";
+    const email = providerSignupEmailInput ? providerSignupEmailInput.value.trim().toLowerCase() : "";
     const telephone = providerSignupPhoneInput ? providerSignupPhoneInput.value.trim() : "";
     const password = providerSignupPasswordInput ? providerSignupPasswordInput.value.trim() : "";
     const domaine = providerSignupDomainInput ? providerSignupDomainInput.value.trim() : "";
     const experience = providerSignupExperienceInput ? providerSignupExperienceInput.value.trim() : "";
     const profileFile = providerSignupPhotoUpload && providerSignupPhotoUpload.files ? providerSignupPhotoUpload.files[0] : null;
+    let profilePreviewDataUrl = "";
     const cinFile = providerSignupCinUpload && providerSignupCinUpload.files ? providerSignupCinUpload.files[0] : null;
     const casierFile = providerSignupCasierUpload && providerSignupCasierUpload.files ? providerSignupCasierUpload.files[0] : null;
 
@@ -6525,8 +9328,23 @@ if (providerSignupSubmitBtn) {
 
     providerSignupSubmitBtn.disabled = true;
     setProviderSignupFeedback("Envoi du dossier prestataire en cours...", "neutral");
+    clearPendingVerification();
+    try {
+      localStorage.removeItem(ACTIVE_CLIENT_ACCOUNT_STORAGE_KEY);
+      localStorage.removeItem(ACTIVE_PROVIDER_ACCOUNT_STORAGE_KEY);
+    } catch (error) {
+      // noop
+    }
 
     try {
+      if (profileFile) {
+        try {
+          profilePreviewDataUrl = await readFileAsDataUrl(profileFile);
+        } catch (error) {
+          profilePreviewDataUrl = "";
+        }
+      }
+
       let result = null;
       let lastNetworkError = null;
 
@@ -6557,6 +9375,10 @@ if (providerSignupSubmitBtn) {
 
           const payloadResult = await response.json().catch(() => ({}));
           if (!response.ok) {
+            if (isRetryableApiCandidateResponse(response, payloadResult)) {
+              lastNetworkError = new Error("API candidate incompatible pour l'inscription prestataire.");
+              continue;
+            }
             throw new Error(payloadResult.message || "Inscription prestataire impossible pour le moment.");
           }
 
@@ -6577,7 +9399,7 @@ if (providerSignupSubmitBtn) {
         throw lastNetworkError || new Error("Serveur backend inaccessible.");
       }
 
-      upsertProviderAccount({
+      const nextProviderAccount = {
         email,
         nom,
         prenom,
@@ -6586,9 +9408,15 @@ if (providerSignupSubmitBtn) {
         categorie: domaine,
         domaine,
         experience,
-        photoProfil: result && result.prestataire ? result.prestataire.photoProfil : "",
+        photoProfil:
+          result && result.prestataire
+            ? String(result.prestataire.photoProfil || profilePreviewDataUrl || "")
+            : profilePreviewDataUrl,
         statutVerification: "en_attente"
-      });
+      };
+      upsertProviderAccount(nextProviderAccount);
+      setActiveProviderAccount(nextProviderAccount);
+      applyActiveUserProfile();
       savePendingVerification("prestataire", email);
       setProviderSignupFeedback("Dossier envoyé. Statut : en attente de vérification admin.", "success");
 
@@ -7016,6 +9844,13 @@ if (openPage10From18BottomBtn) {
   });
 }
 
+if (openPage10From34BottomBtn) {
+  openPage10From34BottomBtn.addEventListener("click", () => {
+    previousPageClass = "page34";
+    goTo("page10");
+  });
+}
+
 if (openPage10From19BottomBtn) {
   openPage10From19BottomBtn.addEventListener("click", () => {
     previousPageClass = "page19";
@@ -7047,7 +9882,62 @@ document.addEventListener("click", (event) => {
   openProviderProfileFromButton(dynamicButton);
 });
 
-document.addEventListener("click", (event) => {
+document.addEventListener("click", async (event) => {
+  const openRequestChatButton = event.target.closest(".page10-request-chat-btn");
+  if (openRequestChatButton) {
+    const requestId = String((openRequestChatButton.dataset && openRequestChatButton.dataset.requestId) || "").trim();
+    if (!requestId) {
+      return;
+    }
+    selectedOngoingRequestId = requestId;
+    await openOrderChatModalByRequestId(requestId);
+    return;
+  }
+
+  const acceptRequestButton = event.target.closest(".page10-request-accept-btn");
+  if (acceptRequestButton) {
+    const requestId = String((acceptRequestButton.dataset && acceptRequestButton.dataset.requestId) || "").trim();
+    if (!requestId) {
+      return;
+    }
+
+    const acceptedRequest = applyProviderDecisionToRequestById(requestId, "accept");
+    if (!acceptedRequest) {
+      return;
+    }
+
+    await updateCommandeStatusForActiveParticipant(acceptedRequest.id, "en_cours");
+    pushClientNotification(
+      "request_created",
+      `Votre demande a ete acceptee par ${String(acceptedRequest.providerName || "le prestataire").trim()}.`,
+      { clientEmail: acceptedRequest.clientEmail, requestId: acceptedRequest.id }
+    );
+    renderPage10OngoingRequests();
+    return;
+  }
+
+  const rejectRequestButton = event.target.closest(".page10-request-reject-btn");
+  if (rejectRequestButton) {
+    const requestId = String((rejectRequestButton.dataset && rejectRequestButton.dataset.requestId) || "").trim();
+    if (!requestId) {
+      return;
+    }
+
+    const rejectedRequest = applyProviderDecisionToRequestById(requestId, "reject");
+    if (!rejectedRequest) {
+      return;
+    }
+
+    await updateCommandeStatusForActiveParticipant(rejectedRequest.id, "annulee");
+    pushClientNotification(
+      "request_cancelled",
+      "Le prestataire n'est pas en mesure d'accepter votre demande.",
+      { clientEmail: rejectedRequest.clientEmail, requestId: rejectedRequest.id }
+    );
+    renderPage10OngoingRequests();
+    return;
+  }
+
   const cancelRequestButton = event.target.closest(".page10-request-cancel-btn");
   if (cancelRequestButton) {
     selectedOngoingRequestId = String(
@@ -7069,12 +9959,32 @@ document.addEventListener("click", (event) => {
     selectedOngoingRequestId = String(
       (continueRequestButton.dataset && continueRequestButton.dataset.requestId) || ""
     ).trim();
+    const activeClientEmail = getActiveClientEmail();
+    if (!activeClientEmail) {
+      return;
+    }
     const selectedRequest = getClientOngoingRequestById(selectedOngoingRequestId);
+    if (!selectedRequest) {
+      const anyStatusRequest = getClientRequestByIdAnyStatus(selectedOngoingRequestId, activeClientEmail);
+      const requestStatus = normalizeRequestLifecycleStatus(anyStatusRequest && anyStatusRequest.status, "en_cours");
+      if (requestStatus === "en_attente_prestataire") {
+        window.alert("Le prestataire n'a pas encore repondu. Merci de patienter.");
+        return;
+      }
+      if (requestStatus === "annule") {
+        window.alert("Le prestataire n'est pas en mesure d'accepter la demande.");
+        previousPageClass = "page10";
+        goTo("page8");
+        return;
+      }
+    }
     if (selectedRequest) {
       hydrateCurrentOrderContextFromOngoingRequest(selectedRequest);
+      applyPage19RequestDateTime(selectedRequest.createdAt);
     }
     previousPageClass = "page10";
-    goTo("page20");
+    goTo("page19");
+    return;
   }
 });
 
@@ -7270,15 +10180,30 @@ if (openPage19Btn) {
       const createdRequest = saveCurrentOrderToOngoingRequests(payload);
       if (createdRequest) {
         selectedOngoingRequestId = String(createdRequest.id || "").trim();
+        lastPaidRequestTimestamp = String(createdRequest.createdAt || new Date().toISOString());
+        applyPage19RequestDateTime(lastPaidRequestTimestamp);
         pushClientNotification(
           "request_created",
           `Demande envoyée à ${createdRequest.providerName || "votre prestataire"}.`,
           { requestId: createdRequest.id }
         );
+        const providerNotifEmail = resolveProviderEmailForRequest(createdRequest);
+        if (providerNotifEmail) {
+          const clientLabel =
+            String((createdRequest && createdRequest.clientName) || "").trim() || "un client";
+          pushProviderNotification(
+            "provider_request_received",
+            `Nouvelle demande recue de ${clientLabel}.`,
+            { providerEmail: providerNotifEmail, requestId: createdRequest.id }
+          );
+        }
+      } else {
+        lastPaidRequestTimestamp = new Date().toISOString();
+        applyPage19RequestDateTime(lastPaidRequestTimestamp);
       }
 
       previousPageClass = "page18";
-      goTo("page19");
+      goTo("page34");
     } catch (error) {
       window.alert(error && error.message ? error.message : "Commande non enregistrée.");
     } finally {
@@ -7297,8 +10222,67 @@ if (openPage20Btn) {
   });
 }
 
+if (openPage19From34Btn) {
+  openPage19From34Btn.addEventListener("click", async () => {
+    const activeClientEmail = getActiveClientEmail();
+    if (!activeClientEmail) {
+      previousPageClass = "page34";
+      goTo("page4");
+      return;
+    }
+
+    try {
+      await syncOngoingRequestsFromBackendForActiveParticipant();
+    } catch (error) {
+      // keep local fallback when backend is temporarily unreachable
+    }
+
+    const requestIdFromState = String(selectedOngoingRequestId || "").trim();
+    const requestFromState = requestIdFromState
+      ? getClientRequestByIdAnyStatus(requestIdFromState, activeClientEmail)
+      : null;
+    const activeRequest = requestFromState || getLatestClientRequestForWaitingFlow(activeClientEmail);
+    if (!activeRequest) {
+      window.alert("Aucune demande active trouvee.");
+      previousPageClass = "page34";
+      goTo("page8");
+      return;
+    }
+
+    selectedOngoingRequestId = String(activeRequest.id || "").trim();
+    const requestStatus = normalizeRequestLifecycleStatus(activeRequest.status, "en_attente_prestataire");
+    if (requestStatus === "annule") {
+      window.alert("Le prestataire n'est pas en mesure d'accepter la demande.");
+      previousPageClass = "page34";
+      goTo("page8");
+      return;
+    }
+    if (requestStatus === "en_attente_prestataire") {
+      window.alert("Le prestataire n'a pas encore repondu. Merci de patienter.");
+      return;
+    }
+
+    hydrateCurrentOrderContextFromOngoingRequest(activeRequest);
+    applyPage19RequestDateTime(activeRequest.createdAt);
+    previousPageClass = "page34";
+    goTo("page19");
+  });
+}
+
 if (openPage31Btn) {
   openPage31Btn.addEventListener("click", () => {
+    const activeClientEmail = getActiveClientEmail();
+    if (activeClientEmail) {
+      const selectedRequest =
+        getClientRequestByIdAnyStatus(selectedOngoingRequestId, activeClientEmail) ||
+        getLatestClientRequestForWaitingFlow(activeClientEmail);
+      if (selectedRequest) {
+        if (selectedRequest.id) {
+          selectedOngoingRequestId = String(selectedRequest.id || "").trim();
+        }
+        hydrateCurrentOrderContextFromOngoingRequest(selectedRequest);
+      }
+    }
     previousPageClass = "page20";
     goTo("page31");
   });
@@ -7307,6 +10291,13 @@ if (openPage31Btn) {
 if (backTo18From19Btn) {
   backTo18From19Btn.addEventListener("click", () => {
     previousPageClass = "page19";
+    goTo("page18");
+  });
+}
+
+if (backTo18From34Btn) {
+  backTo18From34Btn.addEventListener("click", () => {
+    previousPageClass = "page34";
     goTo("page18");
   });
 }
@@ -7382,7 +10373,7 @@ if (clientInterventionPhotosInput) {
 }
 
 if (clientInterventionFinishBtn) {
-  clientInterventionFinishBtn.addEventListener("click", () => {
+  clientInterventionFinishBtn.addEventListener("click", async () => {
     if (clientInterventionFinishBtn.disabled) {
       return;
     }
@@ -7419,6 +10410,9 @@ if (clientInterventionFinishBtn) {
       setClientInterventionFeedback("Impossible de finaliser cette demande.", "error");
       return;
     }
+
+    await updateCommandeStatusForActiveParticipant(completedRequest.id, "terminee");
+    removeOrderChatLocalMessagesByRequestId(completedRequest.id);
 
     pushClientNotification(
       "request_created",
@@ -7707,10 +10701,16 @@ if (backTo6FromProviderSignupBtn) {
 
 if (openPage16Btns.length > 0) {
   openPage16Btns.forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       const activeScreen = document.querySelector(".screen.active");
-      previousPageClass = getPageClassFromElement(activeScreen) || "page8";
-      goTo("page16");
+      const sourcePage = getPageClassFromElement(activeScreen) || "page8";
+      previousPageClass = sourcePage;
+      const sourceRole = resolveProfileRoleFromPageClass(sourcePage);
+      if (sourceRole) {
+        setActiveProfileRole(sourceRole);
+        lastResolvedProfileType = sourceRole;
+      }
+      await openSupportChatPage();
     });
   });
 }
@@ -7727,7 +10727,192 @@ if (openHomeBtns.length > 0) {
 
 if (backFrom16Btn) {
   backFrom16Btn.addEventListener("click", () => {
+    stopSupportChatPolling();
     goTo(previousPageClass || "page8");
+  });
+}
+
+if (supportChatForm) {
+  supportChatForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const participant = getActiveSupportParticipant();
+    if (!participant) {
+      setSupportChatFeedback("Connectez-vous pour parler au support.", "error");
+      return;
+    }
+
+    const message = supportChatInput ? supportChatInput.value.trim() : "";
+    if (!message) {
+      setSupportChatFeedback("Ecrivez un message avant l'envoi.", "error");
+      return;
+    }
+
+    if (supportChatSendBtn) {
+      supportChatSendBtn.disabled = true;
+    }
+    setSupportChatFeedback("Envoi en cours...");
+
+    try {
+      const optimisticMessage = {
+        participantEmail: participant.participantEmail,
+        participantType: participant.participantType,
+        participantName: participant.participantName,
+        message,
+        createdAt: new Date().toISOString()
+      };
+      pushSupportLocalMessage(optimisticMessage);
+      supportChatCachedMessages = getSupportLocalMessagesByParticipant(participant.participantEmail);
+      renderSupportChatMessages(supportChatCachedMessages, participant.participantType);
+
+      const payload = await sendSupportMessageForParticipant(participant, message);
+      const saved = payload && payload.supportMessage ? payload.supportMessage : null;
+      if (supportChatInput) {
+        supportChatInput.value = "";
+      }
+      if (saved && typeof saved === "object") {
+        const remoteRows = getSupportLocalMessagesByParticipant(participant.participantEmail);
+        upsertSupportLocalMessagesForParticipant(participant.participantEmail, [...remoteRows, saved]);
+        supportChatCachedMessages = getSupportLocalMessagesByParticipant(participant.participantEmail);
+        renderSupportChatMessages(supportChatCachedMessages, participant.participantType);
+      }
+      await refreshSupportChatMessages({ keepFeedback: true, silent: true });
+      setSupportChatFeedback("Message envoye.", "success");
+    } catch (error) {
+      setSupportChatFeedback(error.message || "Envoi impossible.", "error");
+    } finally {
+      if (supportChatSendBtn) {
+        supportChatSendBtn.disabled = false;
+      }
+    }
+  });
+}
+
+if (orderChatCloseBackdropBtn) {
+  orderChatCloseBackdropBtn.addEventListener("click", () => {
+    closeOrderChatModal();
+  });
+}
+
+if (orderChatCloseBtn) {
+  orderChatCloseBtn.addEventListener("click", () => {
+    closeOrderChatModal();
+  });
+}
+
+if (orderChatForm) {
+  orderChatForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!activeOrderChatRequestId || !activeOrderChatParticipant) {
+      setOrderChatFeedback("Aucune conversation active.", "error");
+      return;
+    }
+
+    const message = String((orderChatInput && orderChatInput.value) || "").trim();
+    if (!message) {
+      setOrderChatFeedback("Entrez un message.", "error");
+      return;
+    }
+
+    if (orderChatSendBtn) {
+      orderChatSendBtn.disabled = true;
+    }
+    setOrderChatFeedback("Envoi du message...");
+
+    try {
+      const sentToBackend = await sendOrderChatMessage(activeOrderChatRequestId, activeOrderChatParticipant, message);
+      if (orderChatInput) {
+        orderChatInput.value = "";
+      }
+      await refreshOrderChatMessages();
+      setOrderChatFeedback(
+        sentToBackend
+          ? "Message envoyé."
+          : "Message enregistré localement (backend indisponible).",
+        sentToBackend ? "success" : "error"
+      );
+    } catch (error) {
+      setOrderChatFeedback((error && error.message) || "Envoi impossible.", "error");
+    } finally {
+      if (orderChatSendBtn) {
+        orderChatSendBtn.disabled = false;
+      }
+    }
+  });
+}
+
+if (page33ChatForm) {
+  page33ChatForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!activeOrderChatRequestId || !activeOrderChatParticipant) {
+      setOrderChatFeedback("Aucune conversation active.", "error");
+      return;
+    }
+
+    const message = String((page33ChatInput && page33ChatInput.value) || "").trim();
+    if (!message) {
+      setOrderChatFeedback("Entrez un message.", "error");
+      return;
+    }
+
+    if (page33ChatSendBtn) {
+      page33ChatSendBtn.disabled = true;
+    }
+    setOrderChatFeedback("Envoi du message...");
+
+    try {
+      const sentToBackend = await sendOrderChatMessage(activeOrderChatRequestId, activeOrderChatParticipant, message);
+      if (page33ChatInput) {
+        page33ChatInput.value = "";
+      }
+      await refreshOrderChatMessages();
+      setOrderChatFeedback(
+        sentToBackend
+          ? "Message envoyé."
+          : "Message enregistré localement (backend indisponible).",
+        sentToBackend ? "success" : "error"
+      );
+    } catch (error) {
+      setOrderChatFeedback((error && error.message) || "Envoi impossible.", "error");
+    } finally {
+      if (page33ChatSendBtn) {
+        page33ChatSendBtn.disabled = false;
+      }
+    }
+  });
+}
+
+if (openPage33ChatBtn) {
+  openPage33ChatBtn.addEventListener("click", () => {
+    openDefaultOrderChatConversation().catch(() => {
+      setOrderChatFeedback("Impossible d'ouvrir le chat.", "error");
+    });
+  });
+}
+
+if (openPage20ChatBtn) {
+  openPage20ChatBtn.addEventListener("click", () => {
+    openDefaultOrderChatConversation().catch(() => {
+      setOrderChatFeedback("Impossible d'ouvrir le chat.", "error");
+    });
+  });
+}
+
+if (openPage8ChatBtn) {
+  openPage8ChatBtn.addEventListener("click", () => {
+    openDefaultOrderChatConversation().catch(() => {
+      setOrderChatFeedback("Impossible d'ouvrir le chat.", "error");
+    });
+  });
+}
+
+if (backTo19From33Btn) {
+  backTo19From33Btn.addEventListener("click", () => {
+    const activeRoleForChat = resolveActiveProfileTypeForChat();
+    let targetPage = activeOrderChatReturnPage || (activeRoleForChat === "prestataire" ? "page10" : "page19");
+    if (activeRoleForChat === "prestataire" && targetPage === "page19") {
+      targetPage = "page10";
+    }
+    goTo(targetPage);
   });
 }
 
@@ -7738,6 +10923,110 @@ if (waitingGoLoginBtn) {
     }
 
     const pending = getPendingVerification();
+    const waitingTypeContextLabel = String((waitingProfileType && waitingProfileType.textContent) || "")
+      .trim()
+      .toLowerCase();
+    const isProviderWaitingContext =
+      (pending && String(pending.profileType || "").trim().toLowerCase() === "prestataire") ||
+      waitingTypeContextLabel.includes("prestataire") ||
+      lastResolvedProfileType === "prestataire";
+
+    if (isProviderWaitingContext) {
+      const pendingProviderEmail =
+        pending && String(pending.profileType || "").trim().toLowerCase() === "prestataire"
+          ? String(pending.email || "").trim().toLowerCase()
+          : "";
+      const activeProviderEmail = getActiveProviderEmail();
+      const providerEmail = pendingProviderEmail || activeProviderEmail;
+      if (!providerEmail) {
+        showSubmissionWaitingPage("prestataire", normalizeStatus(lastResolvedVerificationStatus || "en_attente"));
+        return;
+      }
+
+      const localProviderPayload = findProviderAccountByEmail(providerEmail) || null;
+      let remoteProviderPayload = null;
+      try {
+        remoteProviderPayload = await fetchVerificationStatusByType("prestataire", providerEmail, {
+          allowNotFound: true
+        });
+      } catch (error) {
+        // keep local payload fallback when backend is temporarily unreachable
+      }
+
+      const nextProviderPayload = {
+        ...(localProviderPayload || {}),
+        ...(remoteProviderPayload || {}),
+        email: providerEmail
+      };
+      const nextProviderStatus = normalizeStatus(
+        nextProviderPayload.statutVerification || lastResolvedVerificationStatus || "en_attente"
+      );
+
+      if (nextProviderStatus === "refuse") {
+        clearPendingVerification();
+        previousPageClass = "page29";
+        goTo("page4");
+        return;
+      }
+
+      if (nextProviderStatus !== "valide") {
+        showSubmissionWaitingPage("prestataire", nextProviderStatus || "en_attente");
+        return;
+      }
+
+      activateProfileSession("prestataire", providerEmail, nextProviderPayload);
+      clearPendingVerification();
+      openProviderApprovedPopup();
+      return;
+    }
+
+    const pendingClientEmail =
+      pending && String(pending.profileType || "").trim().toLowerCase() === "client"
+        ? String(pending.email || "").trim().toLowerCase()
+        : "";
+    const activeClientEmail = getActiveClientEmail();
+    const clientEmail = pendingClientEmail || activeClientEmail;
+    if (clientEmail) {
+      const localClientPayload = findClientAccountByEmail(clientEmail) || null;
+      let remoteClientPayload = null;
+      try {
+        remoteClientPayload = await fetchVerificationStatusByType("client", clientEmail, {
+          allowNotFound: true
+        });
+      } catch (error) {
+        // keep local payload fallback when backend is temporarily unreachable
+      }
+
+      const nextClientPayload = {
+        ...(localClientPayload || {}),
+        ...(remoteClientPayload || {}),
+        email: clientEmail
+      };
+      const nextClientStatus = normalizeStatus(
+        nextClientPayload.statutVerification || lastResolvedVerificationStatus || "en_attente"
+      );
+
+      if (nextClientStatus === "refuse") {
+        clearPendingVerification();
+        previousPageClass = "page29";
+        goTo("page4");
+        return;
+      }
+
+      if (!canClientContinueAfterAdminApproval(nextClientStatus, nextClientPayload)) {
+        activateProfileSession("client", clientEmail, nextClientPayload);
+        savePendingVerification("client", clientEmail);
+        showSubmissionWaitingPage("client", nextClientStatus || "en_attente");
+        return;
+      }
+
+      activateProfileSession("client", clientEmail, nextClientPayload);
+      clearPendingVerification();
+      previousPageClass = "page29";
+      goTo("page8");
+      return;
+    }
+
     let nextProfileType = "";
     let nextPayload = null;
     let nextStatus = "";
@@ -7838,7 +11127,7 @@ if (waitingGoLoginBtn) {
       return;
     }
 
-    goTo("page8");
+    goTo("page4");
   });
 }
 
@@ -7898,6 +11187,13 @@ if (providerCoverageManualApplyBtn) {
 
     if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
       setProviderCoverageFeedback("Coordonnées invalides. Latitude -90..90, Longitude -180..180.", "error");
+      return;
+    }
+    if (isNullIslandCoordinate(latitude, longitude)) {
+      setProviderCoverageFeedback(
+        "Coordonnées 0,0 non autorisées. Utilisez 27.14867, -13.19321 ou votre position réelle.",
+        "error"
+      );
       return;
     }
 
@@ -8251,6 +11547,10 @@ if (submitProviderVerificationBtn) {
 
           const payloadResult = await response.json().catch(() => ({}));
           if (!response.ok) {
+            if (isRetryableApiCandidateResponse(response, payloadResult)) {
+              lastNetworkError = new Error("API candidate incompatible pour l'inscription prestataire.");
+              continue;
+            }
             throw new Error(payloadResult.message || "Inscription impossible pour le moment.");
           }
 
@@ -8333,16 +11633,86 @@ document.addEventListener("keydown", (event) => {
     closePage15NotifOverlay();
     closePage18AddressOverlay();
     closeLogoutConfirmOverlay();
+    closeOrderChatModal();
   }
 });
 
 window.addEventListener("load", () => {
   fitActiveScreen();
+  sanitizeLegacyProfilePhotosInLocalStorage();
+  enforceExclusiveActiveSession();
   applyActiveUserProfile();
+  const explicitRole = getActiveProfileRole();
+  if (!explicitRole) {
+    const hasClient = Boolean(getActiveClientEmail());
+    const hasProvider = Boolean(getActiveProviderEmail());
+    if (hasProvider && !hasClient) {
+      setActiveProfileRole("prestataire");
+    } else if (hasClient && !hasProvider) {
+      setActiveProfileRole("client");
+    } else if (lastResolvedProfileType === "prestataire" || lastResolvedProfileType === "client") {
+      setActiveProfileRole(lastResolvedProfileType);
+    }
+  }
+  const activeRoleForSession = resolveActiveProfileTypeForChat();
+  let shouldRestoreLastPage = true;
+  if (activeRoleForSession === "client") {
+    const activeClientAccount = getActiveClientAccount();
+    const activeClientEmail = String((activeClientAccount && activeClientAccount.email) || "").trim().toLowerCase();
+    const activeClientStatus = normalizeStatus(
+      (activeClientAccount && activeClientAccount.statutVerification) || "en_attente"
+    );
+    if (activeClientEmail && !canClientContinueAfterAdminApproval(activeClientStatus, activeClientAccount)) {
+      savePendingVerification("client", activeClientEmail);
+      showSubmissionWaitingPage("client", activeClientStatus || "en_attente");
+      shouldRestoreLastPage = false;
+    }
+  }
+  if (shouldRestoreLastPage && (activeRoleForSession === "client" || activeRoleForSession === "prestataire")) {
+    const fallbackPage = activeRoleForSession === "prestataire" ? "page10" : "page8";
+    const storedPageRaw = getLastVisitedPageForRole(activeRoleForSession);
+    const storedPage =
+      activeRoleForSession === "prestataire" && storedPageRaw === "page19" ? "" : storedPageRaw;
+    const targetPage = storedPage || fallbackPage;
+    if (isValidPageClass(targetPage)) {
+      goTo(targetPage);
+    }
+  }
   renderPage10OngoingRequests();
-  syncVerifiedProviderDirectoryFromBackend();
+  syncPage19ChatFabState();
+  syncChatUnreadBadges().catch(() => {
+    return;
+  });
+  ensureChatBadgePolling();
+  ensureProviderDirectoryPolling();
+  syncVerifiedProviderDirectoryIfVisible(true);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    return;
+  }
+  syncVerifiedProviderDirectoryIfVisible(false);
+});
+
+window.addEventListener("focus", () => {
+  syncVerifiedProviderDirectoryIfVisible(false);
+});
+
+window.addEventListener("storage", (event) => {
+  if (!event) {
+    return;
+  }
+  if (event.key === VERIFIED_PROVIDER_DIRECTORY_STORAGE_KEY) {
+    renderDynamicProviderDirectory();
+  }
 });
 window.addEventListener("resize", fitActiveScreen);
+
+
+
+
+
 
 
 

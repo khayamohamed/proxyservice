@@ -76,7 +76,10 @@ async function registerClient(req, res, next) {
       return res.status(400).json({ message: "Client must be at least 18 years old." });
     }
 
-    if (!req.file) {
+    const cinFile = req.files && Array.isArray(req.files.cinImage) ? req.files.cinImage[0] : null;
+    const profileFile = req.files && Array.isArray(req.files.photoProfil) ? req.files.photoProfil[0] : null;
+
+    if (!cinFile) {
       return res.status(400).json({
         message: "cinImage is required."
       });
@@ -88,7 +91,8 @@ async function registerClient(req, res, next) {
       return res.status(409).json({ message: "A client already exists with this email." });
     }
 
-    const cinImage = toPublicPath(req.file.path);
+    const cinImage = toPublicPath(cinFile.path);
+    const photoProfil = profileFile ? toPublicPath(profileFile.path) : "";
     const geoFields = parseGeoFields(req.body);
     const deviceHash = buildDeviceFingerprintHash(req, deviceFingerprintHash, [normalizedEmail, telephone]);
 
@@ -123,6 +127,7 @@ async function registerClient(req, res, next) {
       dateDeNaissance,
       age,
       cinImage,
+      photoProfil,
       deviceFingerprintHash: deviceHash,
       location: geoFields.location,
       locationAccuracy: geoFields.locationAccuracy,
@@ -156,7 +161,7 @@ async function getClientStatus(req, res, next) {
     }
 
     const client = await Client.findOne({ email }).select(
-      "email nom prenom telephone dateDeNaissance age cinImage statutVerification updatedAt createdAt"
+      "email nom prenom telephone dateDeNaissance age cinImage photoProfil statutVerification updatedAt createdAt"
     );
 
     if (!client) {
@@ -171,6 +176,7 @@ async function getClientStatus(req, res, next) {
       dateDeNaissance: client.dateDeNaissance || null,
       age: client.age || null,
       cinImage: client.cinImage || null,
+      photoProfil: client.photoProfil || "",
       statutVerification: client.statutVerification || "en_attente",
       updatedAt: client.updatedAt,
       createdAt: client.createdAt

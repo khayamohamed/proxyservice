@@ -10,7 +10,7 @@ function ensureDir(dirPath) {
   }
 }
 
-["prestataires/cin", "prestataires/casier", "prestataires/profile", "clients/cin", "misc"].forEach((folder) => {
+["prestataires/cin", "prestataires/casier", "prestataires/profile", "clients/cin", "clients/profile", "misc"].forEach((folder) => {
   ensureDir(path.join(UPLOADS_DIR, ...folder.split("/")));
 });
 
@@ -28,6 +28,9 @@ function resolveFolderByRequest(req, file) {
   }
 
   if (baseUrl.includes("client")) {
+    if (file.fieldname === "photoProfil") {
+      return "clients/profile";
+    }
     return "clients/cin";
   }
 
@@ -73,7 +76,10 @@ const providerUpload = multer(commonMulterOptions).fields([
   { name: "photoProfil", maxCount: 1 }
 ]);
 
-const clientUpload = multer(commonMulterOptions).single("cinImage");
+const clientUpload = multer(commonMulterOptions).fields([
+  { name: "cinImage", maxCount: 1 },
+  { name: "photoProfil", maxCount: 1 }
+]);
 
 function toPublicPath(filePath) {
   const relativePath = path.relative(UPLOADS_DIR, filePath).split(path.sep).join("/");

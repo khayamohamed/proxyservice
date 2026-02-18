@@ -1,4 +1,5 @@
 const express = require("express");
+const { requireAdminAuth } = require("../middlewares/adminAuth");
 const {
   getPrestataires,
   getPrestatairesEnAttente,
@@ -11,10 +12,12 @@ const {
   refuserClient,
   bannirClient,
   getCommandes,
-  getDashboard
+  getDashboard,
+  getCommandeChatMessagesForAdmin
 } = require("../controllers/admin.controller");
 
 const router = express.Router();
+router.use(requireAdminAuth);
 
 router.get("/prestataires", getPrestataires);
 router.get("/prestataires/en-attente", getPrestatairesEnAttente);
@@ -29,6 +32,7 @@ router.patch("/clients/:id/refuser", refuserClient);
 router.patch("/clients/:id/bannir", bannirClient);
 
 router.get("/commandes", getCommandes);
+router.get("/commandes/:id/chat/messages", getCommandeChatMessagesForAdmin);
 router.get("/dashboard", getDashboard);
 
 module.exports = router;

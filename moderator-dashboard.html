@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Moderateur - ProxyServices</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="admin-dashboard.css">
+</head>
+<body>
+  <div class="db-shell">
+    <header class="db-header">
+      <div>
+        <p class="db-kicker">Moderation</p>
+        <h1>Dashboard moderateur</h1>
+        <p class="db-subtitle">Verification des comptes, suivi des commandes, acces aux discussions et support direct.</p>
+      </div>
+    </header>
+
+    <section class="stats-grid" id="stats-grid"></section>
+
+    <section class="layout-grid">
+      <article class="panel panel-wide">
+        <div class="panel-head">
+          <h2>Prestataires (historique complet)</h2>
+          <span id="pending-count" class="tag">0 élément</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Infos prestataire</th>
+                <th>Statut</th>
+                <th>Documents</th>
+                <th>Actions moderateur</th>
+              </tr>
+            </thead>
+            <tbody id="pending-body"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Clients (verification de majorité + CIN)</h2>
+          <span id="clients-count" class="tag">0 client</span>
+        </div>
+        <div class="table-wrap compact">
+          <table>
+            <thead>
+              <tr>
+                <th>Nom</th>
+                <th>Email</th>
+                <th>Telephone</th>
+                <th>Date naissance</th>
+                <th>Age</th>
+                <th>Statut</th>
+                <th>CIN (photo)</th>
+                <th>Blockchain (ID/TX)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="clients-body"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head row">
+          <h2>Apercu cote client</h2>
+          <form id="provider-filter-form" class="inline-form">
+            <input id="provider-categorie" type="text" placeholder="Filtrer categorie...">
+            <button class="btn btn-small" type="submit">Filtrer</button>
+          </form>
+        </div>
+        <div id="visible-providers" class="list-grid"></div>
+      </article>
+
+      <article class="panel panel-wide">
+        <div class="panel-head">
+          <h2>Commandes (historique complet)</h2>
+          <span id="orders-count" class="tag">0 commande</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Client</th>
+                <th>Prestataire</th>
+                <th>Distance</th>
+                <th>Tarif distance</th>
+                <th>Paiement</th>
+                <th>Statut</th>
+                <th>Date</th>
+                <th>Chat</th>
+              </tr>
+            </thead>
+            <tbody id="orders-body"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="panel panel-wide">
+        <div class="panel-head">
+          <h2>Support client/prestataire</h2>
+          <span id="support-count" class="tag">0 conversation</span>
+        </div>
+        <div class="support-grid">
+          <aside class="support-list-wrap">
+            <div id="support-conversations" class="support-conversations"></div>
+          </aside>
+          <section class="support-chat-wrap">
+            <div id="support-chat-meta" class="order-chat-meta">Selectionnez une conversation.</div>
+            <div id="support-admin-messages" class="order-chat-admin-messages"></div>
+            <form id="support-reply-form" class="support-reply-form">
+              <input id="support-reply-input" type="text" maxlength="1200" placeholder="Repondre...">
+              <button class="btn btn-small" id="support-reply-send-btn" type="submit">Envoyer</button>
+            </form>
+          </section>
+        </div>
+      </article>
+    </section>
+
+    <aside id="toast" class="toast" hidden></aside>
+
+    <div id="fingerprint-modal" class="modal" hidden>
+      <button id="fingerprint-modal-backdrop" class="modal-backdrop" type="button" aria-label="Fermer"></button>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="fingerprint-modal-title">
+        <div class="modal-head">
+          <h3 id="fingerprint-modal-title">Infos fingerprint</h3>
+          <button id="fingerprint-modal-close" class="btn btn-small btn-secondary" type="button">Fermer</button>
+        </div>
+        <div class="fingerprint-info-grid">
+          <p><strong>Prestataire:</strong> <span id="fp-provider-name">-</span></p>
+          <p><strong>Email:</strong> <span id="fp-provider-email">-</span></p>
+          <p><strong>Statut:</strong> <span id="fp-provider-status">-</span></p>
+          <p><strong>Hash:</strong> <span id="fp-hash">-</span></p>
+          <p><strong>Transaction:</strong> <span id="fp-tx">-</span></p>
+          <p><strong>Réseau:</strong> <span id="fp-network">-</span></p>
+          <p><strong>Mode:</strong> <span id="fp-mode">-</span></p>
+          <p><strong>Date:</strong> <span id="fp-recorded-at">-</span></p>
+          <p><strong>Geo:</strong> <span id="fp-location">-</span></p>
+        </div>
+      </section>
+    </div>
+
+    <div id="order-chat-modal" class="modal" hidden>
+      <button id="order-chat-modal-backdrop" class="modal-backdrop" type="button" aria-label="Fermer"></button>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="order-chat-modal-title">
+        <div class="modal-head">
+          <h3 id="order-chat-modal-title">Discussion client/prestataire</h3>
+          <button id="order-chat-modal-close" class="btn btn-small btn-secondary" type="button">Fermer</button>
+        </div>
+        <div id="order-chat-meta" class="order-chat-meta"></div>
+        <div id="order-chat-admin-messages" class="order-chat-admin-messages"></div>
+      </section>
+    </div>
+  </div>
+
+  <script src="admin-dashboard.js?v=20260217-22"></script>
+</body>
+</html>

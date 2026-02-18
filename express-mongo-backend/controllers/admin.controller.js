@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const Prestataire = require("../models/Prestataire");
 const Client = require("../models/Client");
 const Commande = require("../models/Commande");
+const CommandeChatMessage = require("../models/CommandeChatMessage");
 const { writeRecordToChain } = require("../config/blockchain");
 
 function toAbsoluteFileUrl(req, filePath) {
@@ -324,6 +325,34 @@ async function getDashboard(req, res, next) {
   }
 }
 
+async function getCommandeChatMessagesForAdmin(req, res, next) {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ message: "Commande id is required." });
+    }
+
+    const commande = await Commande.findById(id)
+      .populate("clientId", "prenom nom email")
+      .populate("prestataireId", "prenom nom email");
+
+    if (!commande) {
+      return res.status(404).json({ message: "Commande not found." });
+    }
+
+    const messages = await CommandeChatMessage.find({ commandeId: commande._id }).sort({ createdAt: 1 });
+
+    return res.json({
+      commandeId: String(commande._id),
+      client: commande.clientId || null,
+      prestataire: commande.prestataireId || null,
+      messages
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   getPrestataires,
   getPrestatairesEnAttente,
@@ -336,5 +365,6 @@ module.exports = {
   refuserClient,
   bannirClient,
   getCommandes,
-  getDashboard
+  getDashboard,
+  getCommandeChatMessagesForAdmin
 };

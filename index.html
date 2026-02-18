@@ -6,7 +6,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>App - Frames</title>
-  <link rel="stylesheet" href="style.css?v=20260216-07">
+  <link rel="stylesheet" href="style.css?v=20260217-20">
 </head>
 <body>
   <main class="app">
@@ -19,7 +19,7 @@
             class="image"
           >
           <p class="text">
-            Trouvez des services fiables et des commerces près de vous
+            Découvrez les services près de chez vous
           </p>
           <div class="view">
             <div class="row-view">
@@ -64,10 +64,10 @@
               class="image"
             >
             <p class="text">
-              Services à votre portée
+              Des prestataires vérifiés et sérieux
             </p>
             <p class="text2">
-              Plombiers, électriciens... disponibles rapidement
+              Choisissez en toute confiance grâce aux profils, avis et informations claires.
             </p>
             <div class="row-view">
               <img
@@ -100,14 +100,14 @@
           <div class="column">
             <img
               src="./Ellipse 235.png"
-              alt="Illustration commerces locaux"
+              alt="Illustration onboarding"
               class="image"
             >
             <p class="text">
-              Commerces locaux
+              Un service en quelques clics
             </p>
             <p class="text2">
-              Découvrir les commerces locaux simplement
+              Demandez, contactez et obtenez une réponse rapidement, sans perdre du temps.
             </p>
             <div class="column2">
               <img
@@ -163,11 +163,19 @@
                   placeholder="*************"
                   autocomplete="current-password"
                 >
-                <img
-                  src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/2c0jlp1n_expires_30_days.png"
-                  alt="Afficher le mot de passe"
-                  class="image"
+                <button
+                  id="login-password-toggle-btn"
+                  class="password-toggle-btn"
+                  type="button"
+                  aria-label="Afficher le mot de passe"
+                  aria-pressed="false"
                 >
+                  <svg class="password-toggle-icon" viewBox="0 0 24 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M1.5 8C3.5 4.5 7.2 2.2 12 2.2C16.8 2.2 20.5 4.5 22.5 8C20.5 11.5 16.8 13.8 12 13.8C7.2 13.8 3.5 11.5 1.5 8Z"></path>
+                    <circle cx="12" cy="8" r="2.6"></circle>
+                    <line class="password-toggle-slash" x1="4" y1="14" x2="20" y2="2"></line>
+                  </svg>
+                </button>
               </div>
               <div class="view2">
                 <p class="text6">
@@ -243,10 +251,10 @@
           </div>
           <div class="column">
             <p class="text2">
-              Nom et Prénom
+              Nom
             </p>
             <div class="view">
-              <input id="signup-name-input" class="input-field" type="text" placeholder="ARAB ARAB" autocomplete="name">
+              <input id="signup-name-input" class="input-field" type="text" placeholder="Nom" autocomplete="name">
             </div>
             <p class="text4">
               Mot de passe
@@ -294,6 +302,12 @@
             <div class="view5">
               <input id="signup-cin-upload" class="input-field" type="file" accept=".jpg,.jpeg,.png,.webp" required>
             </div>
+            <p class="text7">
+              Photo de profil
+            </p>
+            <div class="view5">
+              <input id="signup-photo-upload" class="input-field" type="file" accept=".jpg,.jpeg,.png,.webp">
+            </div>
             <p id="signup-feedback" class="signup-feedback" aria-live="polite"></p>
             <div class="view6">
               <p class="text8">
@@ -335,16 +349,16 @@
             >
             <div class="column2">
               <span class="text">
-                Client
+                Je suis client
               </span>
               <span class="text3">
-                je cherche un service ou un commerce
+                Je cherche un service fiable près de chez moi
               </span>
             </div>
           </button>
           <div class="box"></div>
           <div class="box2"></div>
-          <button class="row-view3 provider-option-btn" id="to-frame-7-btn" type="button" aria-label="Choisir Prestataire ou Commerce">
+          <button class="row-view3 provider-option-btn" id="to-frame-7-btn" type="button" aria-label="Choisir Prestataire">
             <img
               src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/06vbbmlr_expires_30_days.png"
               alt="Icône prestataire"
@@ -352,10 +366,10 @@
             >
             <div class="column2">
               <span class="text">
-                Prestataire / Commerce
+                Je suis prestataire
               </span>
               <span class="text3">
-                je veux proposer mes services ou promouvoir mon commerce
+                Je veux proposer mes services et trouver des clients
               </span>
             </div>
           </button>
@@ -775,6 +789,9 @@
             >
           </button>
         </div>
+        <button class="page8-chat-fab" id="open-page8-chat-btn" type="button" aria-label="Ouvrir le chat client prestataire" hidden>
+          ðŸ’¬
+        </button>
 
         <div class="page8-overlay" id="page8-overlay" hidden>
           <button class="page8-overlay-backdrop" id="close-page8-overlay-btn" type="button" aria-label="Fermer le menu"></button>
@@ -784,7 +801,7 @@
 
             <div class="p8o-user">
               <img
-                src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/svps67bm_expires_30_days.png"
+                src="./avatar-placeholder.svg"
                 alt="Photo"
                 class="p8o-avatar"
                 id="menu-avatar-main-page8"
@@ -1478,7 +1495,7 @@
               <div class="p8o-top">
               </div>
               <div class="p8o-user">
-                <img src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/svps67bm_expires_30_days.png" alt="Photo" class="p8o-avatar" id="menu-avatar-main-page14">
+                <img src="./avatar-placeholder.svg" alt="Photo" class="p8o-avatar" id="menu-avatar-main-page14">
                 <div>
                   <p class="p8o-name" id="menu-user-name-page14">khal khal</p>
                   <p class="p8o-mail" id="menu-user-email-page14">khal@gmail.com</p>
@@ -1752,7 +1769,7 @@
             <div class="p8o-top">
             </div>
             <div class="p8o-user">
-              <img src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/svps67bm_expires_30_days.png" alt="Photo" class="p8o-avatar" id="menu-avatar-main-page15">
+              <img src="./avatar-placeholder.svg" alt="Photo" class="p8o-avatar" id="menu-avatar-main-page15">
               <div>
                 <p class="p8o-name" id="menu-user-name-page15">khal khal</p>
                 <p class="p8o-mail" id="menu-user-email-page15">khal@gmail.com</p>
@@ -1790,9 +1807,9 @@
 
     <section class="screen page16 no-scale">
       <div class="contain">
-        <div class="view">
-          <div class="scroll-view">
-            <div class="row-view">
+        <div class="view support-chat-shell">
+          <div class="scroll-view support-chat-scroll">
+            <div class="row-view support-chat-head">
               <button class="support-back-btn" id="back-from-16-btn" type="button" aria-label="Retour">
                 <img
                   src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/m7hbywhv_expires_30_days.png"
@@ -1800,90 +1817,22 @@
                   class="image"
                 >
               </button>
-              <span class="text">
-                Support
-              </span>
+              <span class="text">Support</span>
               <div class="box"></div>
             </div>
-            <div class="view2">
-              <div class="view3">
-                <span class="text2">
-                  Salam
-                </span>
-              </div>
-            </div>
-            <div class="view4">
-              <span class="text3">
-                09:00
-              </span>
-            </div>
-            <div class="view5">
-              <span class="text4">
-                Bonjour ! Veuillez choisir le numéro correspondant à votre besoin pour un service plus efficace.
-              </span>
-            </div>
-            <div class="view6">
-              <span class="text5">
-                1. Gestion des Interventions<br><br>2. Gestion des Paiements<br><br>3. Profil &amp; Favoris<br><br>4. Securite &amp; Garanties<br>5. Assistance
-              </span>
-            </div>
-            <span class="text6">
-              09:00
-            </span>
-            <div class="view7">
-              <div class="view8">
-                <span class="text2">
-                  1
-                </span>
-              </div>
-            </div>
-            <div class="view9">
-              <span class="text7">
-                09:03
-              </span>
-            </div>
-            <div class="column">
-              <span class="text8">
-                Ahmed arrive dans 12 min<br>2,1 km Nahda
-              </span>
-              <div class="row-view2">
-                <button class="button" type="button">
-                  <span class="text9">
-                    Probleme technique
-                  </span>
-                </button>
-                <button class="button2" type="button">
-                  <span class="text9">
-                    Retard intervenant
-                  </span>
-                </button>
-              </div>
-            </div>
+            <div id="support-chat-messages" class="support-chat-messages" aria-live="polite"></div>
           </div>
-          <div class="row-view3">
-            <button class="button3" type="button">
-              <img
-                src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/oedt1xb3_expires_30_days.png"
-                alt=""
-                class="image2"
-              >
-            </button>
-            <input type="text" placeholder="ecrire ..." class="input" id="support-chat-input">
-            <button class="button4" type="button">
-              <img
-                src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/wbts52i5_expires_30_days.png"
-                alt=""
-                class="image3"
-              >
-            </button>
-            <button class="button5" type="button">
+          <form id="support-chat-form" class="row-view3 support-chat-form">
+            <input type="text" placeholder="Ecrire un message..." class="input" id="support-chat-input" maxlength="1200" autocomplete="off">
+            <button class="button5" id="support-chat-send-btn" type="submit" aria-label="Envoyer">
               <img
                 src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/c30pwcjc_expires_30_days.png"
                 alt=""
                 class="image4"
               >
             </button>
-          </div>
+          </form>
+          <p id="support-chat-feedback" class="support-chat-feedback" aria-live="polite"></p>
         </div>
       </div>
     </section>
@@ -2064,7 +2013,7 @@
             <div class="view5">
               <button class="button" id="open-page19-btn" type="button">
                 <span class="text11">
-                  Payer
+                  Confirmer
                 </span>
               </button>
             </div>
@@ -2158,7 +2107,7 @@
             </span>
           </div>
           <div class="view3">
-            <span class="text3">
+            <span class="text3" id="page19-request-datetime">
               Demande le jeudi, 24, 17H00
             </span>
           </div>
@@ -2169,6 +2118,9 @@
               </span>
             </button>
           </div>
+          <button class="page19-chat-fab" id="open-page33-chat-btn" type="button" aria-label="Ouvrir le chat">
+            ðŸ’¬
+          </button>
           <span class="text5">
             Si vous avez des questions, veuillez contacter directement notre service client.
           </span>
@@ -2203,6 +2155,109 @@
           <button class="support-chat-fab open-page16-btn" type="button" aria-label="Ouvrir le chat support">
             <img src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/c30pwcjc_expires_30_days.png" alt="">
           </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen page34 page19 no-scale">
+      <div class="contain">
+        <div class="scroll-view">
+          <button class="page19-back-btn" id="back-to-18-from-34-btn" type="button" aria-label="Retour">
+            <img
+              src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/dt7kj9dj_expires_30_days.png"
+              alt="Retour"
+              class="page19-back-icon"
+            >
+          </button>
+          <div class="view">
+            <img
+              src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/m9e63olq_expires_30_days.png"
+              alt="Demande en attente"
+              class="image"
+            >
+          </div>
+          <span class="text">
+            Demande envoyee
+          </span>
+          <div class="view2">
+            <span class="text2">
+              Votre demande a bien ete transmise au prestataire.
+            </span>
+          </div>
+          <div class="view3">
+            <span class="text3">
+              Merci de patienter pendant que le prestataire prend votre demande en compte.
+            </span>
+          </div>
+          <div class="view4">
+            <button class="page19-follow-btn" id="open-page19-from-34-btn" type="button">
+              <span class="text4">
+                Continuer
+              </span>
+            </button>
+          </div>
+          <span class="text5">
+            Vous recevrez une mise a jour des que le prestataire confirme la prise en charge.
+          </span>
+          <img
+            src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/1qw6ma6t_expires_30_days.png"
+            alt=""
+            class="image2"
+          >
+          <div class="page19-bottom-actions">
+            <button class="page19-bottom-btn open-home-btn" type="button" aria-label="Aller a l'accueil">
+              <img
+                src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/en5qod9e_expires_30_days.png"
+                alt="Accueil"
+                class="page19-bottom-home-icon"
+              >
+            </button>
+            <button class="page19-bottom-btn" id="open-page10-from-34-bottom-btn" type="button" aria-label="Ouvrir Mes demandes">
+              <img
+                src="./dmd.png"
+                alt="Mes demandes"
+                class="bottom-demandes-icon"
+              >
+            </button>
+            <button class="page19-bottom-btn open-page16-btn" type="button" aria-label="Ouvrir le support">
+              <img
+                src="./casque.png"
+                alt="Support"
+                class="page19-bottom-support-icon"
+              >
+            </button>
+          </div>
+          <button class="support-chat-fab open-page16-btn" type="button" aria-label="Ouvrir le chat support">
+            <img src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/c30pwcjc_expires_30_days.png" alt="">
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen page33 no-scale">
+      <div class="contain">
+        <div class="scroll-view">
+          <div class="row-view">
+            <button class="page33-back-btn" id="back-to-19-from-33-btn" type="button" aria-label="Retour">
+              ←
+            </button>
+            <div class="page33-head-copy">
+              <img id="page33-chat-avatar" class="page33-chat-avatar" src="./avatar-placeholder.svg" alt="Photo profil">
+              <div class="page33-chat-head-meta">
+                <h2 id="page33-chat-title">Chat</h2>
+                <p id="page33-chat-subtitle">Discussion client/prestataire</p>
+              </div>
+            </div>
+            <div class="box"></div>
+          </div>
+
+          <div id="page33-chat-messages" class="page33-chat-messages"></div>
+
+          <form id="page33-chat-form" class="page33-chat-form">
+            <input id="page33-chat-input" type="text" maxlength="1200" placeholder="Ecrire un message...">
+            <button id="page33-chat-send-btn" type="submit">Envoyer</button>
+          </form>
+          <p id="page33-chat-feedback" class="page33-chat-feedback"></p>
         </div>
       </div>
     </section>
@@ -2292,6 +2347,16 @@
                 </span>
               </button>
             </div>
+            <button
+              class="page20-chat-fab"
+              id="open-page20-chat-btn"
+              type="button"
+              aria-label="Ouvrir le chat"
+              hidden
+              aria-disabled="true"
+            >
+              &#128172;
+            </button>
             <img src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/9Iw2Ao5NX1/lkgci2ld_expires_30_days.png" alt="" class="image10">
             <div class="page20-bottom-actions">
               <button class="page20-bottom-btn open-home-btn" type="button" aria-label="Aller à l'accueil">
@@ -2576,8 +2641,28 @@
         </button>
       </div>
     </div>
+
+    <div class="order-chat-overlay" id="order-chat-overlay" hidden>
+      <button class="order-chat-backdrop" id="order-chat-close-backdrop-btn" type="button" aria-label="Fermer le chat"></button>
+      <section class="order-chat-panel" role="dialog" aria-modal="true" aria-labelledby="order-chat-title">
+        <header class="order-chat-head">
+          <div>
+            <p class="order-chat-kicker">Commande</p>
+            <h3 id="order-chat-title">Chat client/prestataire</h3>
+          </div>
+          <button class="order-chat-close-btn" id="order-chat-close-btn" type="button">Fermer</button>
+        </header>
+        <div id="order-chat-messages" class="order-chat-messages" aria-live="polite"></div>
+        <form id="order-chat-form" class="order-chat-form">
+          <input id="order-chat-input" type="text" maxlength="1200" placeholder="Ecrire un message..." autocomplete="off">
+          <button id="order-chat-send-btn" type="submit">Envoyer</button>
+        </form>
+        <p id="order-chat-feedback" class="order-chat-feedback" aria-live="polite"></p>
+      </section>
+    </div>
   </main>
 
-  <script src="main.js?v=20260216-27"></script>
+  <script src="main.js?v=20260217-65"></script>
 </body>
 </html>
+

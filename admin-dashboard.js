@@ -1,8 +1,8 @@
-const DEFAULT_API_BASE = "http://localhost:5000";
+﻿const DEFAULT_API_BASE = "http://localhost:5000";
 const API_BASE_STORAGE_KEYS = ["proxyservices_admin_api_base"];
 const API_REQUEST_TIMEOUT_MS = 12000;
 const ADMIN_SESSION_STORAGE_KEY = "proxyservices_admin_session";
-const ADMIN_ALLOWED_IDENTIFIER = "admin123";
+const ADMIN_ALLOWED_IDENTIFIERS = new Set(["admin123", "admin1", "admin2", "admin3", "admin4", "admin5"]);
 const ADMIN_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 const state = {
@@ -11,7 +11,11 @@ const state = {
   pendingProviders: [],
   clients: [],
   commandes: [],
-  visibleProviders: []
+  visibleProviders: [],
+  supportConversations: [],
+  supportMessages: [],
+  selectedSupportParticipantEmail: "",
+  selectedSupportParticipantName: ""
 };
 
 const elements = {
@@ -29,6 +33,18 @@ const elements = {
   fingerprintModal: document.getElementById("fingerprint-modal"),
   fingerprintModalBackdrop: document.getElementById("fingerprint-modal-backdrop"),
   fingerprintModalClose: document.getElementById("fingerprint-modal-close"),
+  orderChatModal: document.getElementById("order-chat-modal"),
+  orderChatModalBackdrop: document.getElementById("order-chat-modal-backdrop"),
+  orderChatModalClose: document.getElementById("order-chat-modal-close"),
+  orderChatMeta: document.getElementById("order-chat-meta"),
+  orderChatAdminMessages: document.getElementById("order-chat-admin-messages"),
+  supportCount: document.getElementById("support-count"),
+  supportConversations: document.getElementById("support-conversations"),
+  supportChatMeta: document.getElementById("support-chat-meta"),
+  supportAdminMessages: document.getElementById("support-admin-messages"),
+  supportReplyForm: document.getElementById("support-reply-form"),
+  supportReplyInput: document.getElementById("support-reply-input"),
+  supportReplySendBtn: document.getElementById("support-reply-send-btn"),
   fpProviderName: document.getElementById("fp-provider-name"),
   fpProviderEmail: document.getElementById("fp-provider-email"),
   fpProviderStatus: document.getElementById("fp-provider-status"),
@@ -39,6 +55,8 @@ const elements = {
   fpRecordedAt: document.getElementById("fp-recorded-at"),
   fpLocation: document.getElementById("fp-location")
 };
+
+let supportPollTimer = null;
 
 function buildLoginPageUrl() {
   if (!window.location || window.location.protocol === "file:" || !window.location.host) {
@@ -74,7 +92,7 @@ function hasValidAdminSession() {
   }
 
   const identifier = String(session.email || "").trim().toLowerCase();
-  if (identifier !== ADMIN_ALLOWED_IDENTIFIER) {
+  if (!ADMIN_ALLOWED_IDENTIFIERS.has(identifier)) {
     clearStoredAdminSession();
     return false;
   }
@@ -93,6 +111,22 @@ function hasValidAdminSession() {
   return false;
 }
 
+function getCurrentAdminIdentifier() {
+  const session = getStoredAdminSession();
+  return String((session && session.email) || "").trim().toLowerCase();
+}
+
+function getCurrentAdminSecret() {
+  const session = getStoredAdminSession();
+  const explicitSecret = String((session && session.authSecret) || "").trim();
+  if (explicitSecret) {
+    return explicitSecret;
+  }
+
+  // Fallback for legacy sessions created before authSecret was stored.
+  return getCurrentAdminIdentifier();
+}
+
 function ensureAdminAccessOrRedirect() {
   if (hasValidAdminSession()) {
     return true;
@@ -105,7 +139,12 @@ function ensureAdminAccessOrRedirect() {
 function buildLocalApiBaseCandidates(startPort = 5000, endPort = 5010) {
   const values = [];
   for (let port = startPort; port <= endPort; port += 1) {
-    values.push(`http://localhost:${port}`, `http://127.0.0.1:${port}`);
+    values.push(
+      `http://localhost:${port}`,
+      `http://127.0.0.1:${port}`,
+      `https://localhost:${port}`,
+      `https://127.0.0.1:${port}`
+    );
   }
   return values;
 }
@@ -363,6 +402,267 @@ function closeFingerprintModal() {
   elements.fingerprintModal.hidden = true;
 }
 
+function closeOrderChatModal() {
+  if (!elements.orderChatModal) return;
+  elements.orderChatModal.hidden = true;
+  if (elements.orderChatAdminMessages) {
+    elements.orderChatAdminMessages.innerHTML = "";
+  }
+  if (elements.orderChatMeta) {
+    elements.orderChatMeta.textContent = "";
+  }
+}
+
+function formatOrderChatDate(value) {
+  const date = new Date(String(value || ""));
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+async function openOrderChatModal(orderId) {
+  if (!orderId || !elements.orderChatModal || !elements.orderChatAdminMessages) {
+    return;
+  }
+
+  elements.orderChatModal.hidden = false;
+  elements.orderChatAdminMessages.innerHTML = '<div class="order-chat-admin-empty">Chargement...</div>';
+  if (elements.orderChatMeta) {
+    elements.orderChatMeta.textContent = `Commande: ${orderId}`;
+  }
+
+  try {
+    const payload = await apiFetch(`/admin/commandes/${encodeURIComponent(orderId)}/chat/messages`);
+    const messages = Array.isArray(payload && payload.messages) ? payload.messages : [];
+
+    if (!messages.length) {
+      elements.orderChatAdminMessages.innerHTML =
+        '<div class="order-chat-admin-empty">Aucun message sur cette commande.</div>';
+      return;
+    }
+
+    elements.orderChatAdminMessages.innerHTML = messages
+      .map((entry) => {
+        const senderType = String((entry && entry.senderType) || "").trim().toLowerCase();
+        const rowClass = senderType === "client" ? "order-chat-admin-item is-client" : "order-chat-admin-item";
+        const author = escapeHtml(`${entry.senderName || entry.senderEmail || "Utilisateur"} • ${formatOrderChatDate(entry.createdAt)}`);
+        const text = escapeHtml(entry.message || "");
+        return `
+          <div class="${rowClass}">
+            <span class="order-chat-admin-author">${author}</span>
+            <div class="order-chat-admin-bubble">${text}</div>
+          </div>
+        `;
+      })
+      .join("");
+  } catch (error) {
+    elements.orderChatAdminMessages.innerHTML = `<div class="order-chat-admin-empty">${escapeHtml(
+      error.message || "Impossible de charger le chat."
+    )}</div>`;
+  }
+}
+
+function normalizeSupportEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function formatSupportMessageDate(value) {
+  const date = new Date(String(value || ""));
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function renderSupportConversations() {
+  if (!elements.supportConversations) {
+    return;
+  }
+
+  const rows = Array.isArray(state.supportConversations) ? state.supportConversations : [];
+  if (elements.supportCount) {
+    elements.supportCount.textContent = `${rows.length} conversation${rows.length > 1 ? "s" : ""}`;
+  }
+
+  if (!rows.length) {
+    elements.supportConversations.innerHTML = '<div class="empty">Aucune conversation support.</div>';
+    return;
+  }
+
+  elements.supportConversations.innerHTML = rows
+    .map((row) => {
+      const email = normalizeSupportEmail(row && row.participantEmail);
+      const name = String((row && row.participantName) || "").trim() || email;
+      const isActive = email && email === state.selectedSupportParticipantEmail;
+      return `
+        <button class="support-conversation-item ${isActive ? "is-active" : ""}" type="button" data-support-email="${escapeHtml(
+          email
+        )}" data-support-name="${escapeHtml(name)}">
+          <strong>${escapeHtml(name)}</strong>
+          <small>${escapeHtml(email)}</small>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function renderSupportMessages() {
+  if (!elements.supportAdminMessages) {
+    return;
+  }
+
+  const rows = Array.isArray(state.supportMessages) ? state.supportMessages : [];
+  if (!rows.length) {
+    elements.supportAdminMessages.innerHTML =
+      '<div class="order-chat-admin-empty">Aucun message sur cette conversation.</div>';
+    return;
+  }
+
+  elements.supportAdminMessages.innerHTML = rows
+    .map((entry) => {
+      const senderType = String((entry && entry.participantType) || "").trim().toLowerCase();
+      const isParticipant = senderType !== "moderateur";
+      const rowClass = isParticipant ? "order-chat-admin-item is-client" : "order-chat-admin-item";
+      const author = escapeHtml(
+        `${entry.participantName || entry.moderatorId || "Support"} • ${formatSupportMessageDate(entry.createdAt)}`
+      );
+      const text = escapeHtml(entry.message || "");
+      return `
+          <div class="${rowClass}">
+            <span class="order-chat-admin-author">${author}</span>
+            <div class="order-chat-admin-bubble">${text}</div>
+          </div>
+        `;
+    })
+    .join("");
+
+  elements.supportAdminMessages.scrollTop = elements.supportAdminMessages.scrollHeight;
+}
+
+async function loadSupportConversations() {
+  if (!elements.supportConversations) {
+    return;
+  }
+  const payload = await apiFetch("/support/conversations");
+  state.supportConversations = Array.isArray(payload && payload.conversations) ? payload.conversations : [];
+}
+
+async function loadSupportMessages(participantEmail) {
+  const normalizedEmail = normalizeSupportEmail(participantEmail);
+  if (!normalizedEmail || !elements.supportAdminMessages) {
+    state.supportMessages = [];
+    return;
+  }
+
+  const payload = await apiFetch(`/support/messages?participantEmail=${encodeURIComponent(normalizedEmail)}`);
+  state.supportMessages = Array.isArray(payload && payload.messages) ? payload.messages : [];
+}
+
+async function openSupportConversation(participantEmail, participantName = "") {
+  const normalizedEmail = normalizeSupportEmail(participantEmail);
+  if (!normalizedEmail) {
+    return;
+  }
+
+  state.selectedSupportParticipantEmail = normalizedEmail;
+  state.selectedSupportParticipantName = String(participantName || "").trim() || normalizedEmail;
+  if (elements.supportChatMeta) {
+    elements.supportChatMeta.textContent = `Discussion avec ${state.selectedSupportParticipantName} (${normalizedEmail})`;
+  }
+  await loadSupportMessages(normalizedEmail);
+  renderSupportConversations();
+  renderSupportMessages();
+}
+
+async function sendSupportReply(message) {
+  const normalizedMessage = String(message || "").trim();
+  const participantEmail = normalizeSupportEmail(state.selectedSupportParticipantEmail);
+  if (!participantEmail || !normalizedMessage) {
+    throw new Error("Sélectionnez une conversation et écrivez un message.");
+  }
+
+  const moderatorId = getCurrentAdminIdentifier();
+  await apiFetch("/support/messages", {
+    method: "POST",
+    body: JSON.stringify({
+      participantEmail,
+      participantType: "moderateur",
+      participantName: moderatorId || "moderateur",
+      moderatorId: moderatorId || "",
+      message: normalizedMessage
+    })
+  });
+}
+
+async function refreshSupportPanel(options = {}) {
+  if (!elements.supportConversations) {
+    return;
+  }
+
+  await loadSupportConversations();
+  renderSupportConversations();
+
+  const selectedEmail = normalizeSupportEmail(state.selectedSupportParticipantEmail);
+  const selectedExists = selectedEmail
+    ? state.supportConversations.some((row) => normalizeSupportEmail(row && row.participantEmail) === selectedEmail)
+    : false;
+
+  if (!selectedExists && state.supportConversations.length) {
+    const first = state.supportConversations[0];
+    await openSupportConversation(first.participantEmail, first.participantName);
+    return;
+  }
+
+  if (selectedExists) {
+    await loadSupportMessages(selectedEmail);
+    renderSupportMessages();
+    return;
+  }
+
+  state.supportMessages = [];
+  if (elements.supportChatMeta) {
+    elements.supportChatMeta.textContent = "Sélectionnez une conversation.";
+  }
+  renderSupportMessages();
+  if (options && options.initial && elements.supportAdminMessages) {
+    elements.supportAdminMessages.innerHTML =
+      '<div class="order-chat-admin-empty">Aucune conversation support.</div>';
+  }
+}
+
+function stopSupportPolling() {
+  if (supportPollTimer) {
+    window.clearInterval(supportPollTimer);
+    supportPollTimer = null;
+  }
+}
+
+function startSupportPolling() {
+  if (!elements.supportConversations) {
+    return;
+  }
+  stopSupportPolling();
+  supportPollTimer = window.setInterval(() => {
+    refreshSupportPanel().catch((error) => {
+      const message = String((error && error.message) || "").toLowerCase();
+      if (message.includes("route not found") || message.includes("404")) {
+        stopSupportPolling();
+      }
+    });
+  }, 1800);
+}
+
 function openFingerprintInfo(encodedPayload) {
   if (!elements.fingerprintModal) {
     return;
@@ -427,6 +727,15 @@ function showToast(message, type = "ok") {
 
 async function apiFetch(path, options = {}) {
   let lastNetworkError = null;
+  const adminIdentifier = getCurrentAdminIdentifier();
+  const adminSecret = getCurrentAdminSecret();
+  const authHeaders = {};
+  if (adminIdentifier) {
+    authHeaders["x-admin-identifier"] = adminIdentifier;
+  }
+  if (adminSecret) {
+    authHeaders["x-admin-secret"] = adminSecret;
+  }
 
   for (const apiBase of getApiCandidates()) {
     try {
@@ -434,6 +743,7 @@ async function apiFetch(path, options = {}) {
         ...options,
         headers: {
           "Content-Type": "application/json",
+          ...authHeaders,
           ...(options.headers || {})
         }
       });
@@ -716,7 +1026,7 @@ function renderCommandes() {
   elements.ordersCount.textContent = `${rows.length} commande${rows.length > 1 ? "s" : ""}`;
 
   if (!rows.length) {
-    elements.ordersBody.innerHTML = '<tr><td colspan="8"><div class="empty">Aucune commande.</div></td></tr>';
+    elements.ordersBody.innerHTML = '<tr><td colspan="9"><div class="empty">Aucune commande.</div></td></tr>';
     return;
   }
 
@@ -743,6 +1053,11 @@ function renderCommandes() {
           <td>${renderPaymentMethod(commande.paymentMethod)}</td>
           <td><span class="badge">${commande.statut || "-"}</span></td>
           <td>${formatDate(commande.createdAt)}</td>
+          <td>
+            <button class="btn btn-small btn-secondary" data-order-action="chat" data-id="${commande._id || ""}">
+              Voir chat
+            </button>
+          </td>
         </tr>
       `;
     })
@@ -801,6 +1116,14 @@ async function refreshAll() {
     renderClients();
     renderVisibleProviders();
     renderCommandes();
+
+    if (elements.supportConversations) {
+      try {
+        await refreshSupportPanel({ initial: true });
+      } catch (supportError) {
+        showToast("Support indisponible pour le moment. Les donnees admin restent accessibles.", "error");
+      }
+    }
   } catch (error) {
     if (isNetworkError(error)) {
       showToast("Backend inaccessible. Démarre express-mongo-backend sur un port local (5000-5010).", "error");
@@ -947,6 +1270,61 @@ function setupEvents() {
     handleClientAction(button.dataset.clientAction, button.dataset.id, button);
   });
 
+  elements.ordersBody.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-order-action]");
+    if (!button) {
+      return;
+    }
+
+    const action = String(button.dataset.orderAction || "").trim().toLowerCase();
+    const orderId = String(button.dataset.id || "").trim();
+    if (action === "chat" && orderId) {
+      openOrderChatModal(orderId);
+    }
+  });
+
+  if (elements.supportConversations) {
+    elements.supportConversations.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-support-email]");
+      if (!button) {
+        return;
+      }
+      const participantEmail = normalizeSupportEmail(button.dataset.supportEmail);
+      const participantName = String(button.dataset.supportName || "").trim();
+      openSupportConversation(participantEmail, participantName).catch((error) => {
+        showToast(error.message || "Impossible d'ouvrir la conversation support.", "error");
+      });
+    });
+  }
+
+  if (elements.supportReplyForm) {
+    elements.supportReplyForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = String((elements.supportReplyInput && elements.supportReplyInput.value) || "").trim();
+      if (!message) {
+        showToast("Ecrivez un message avant l'envoi.", "error");
+        return;
+      }
+
+      if (elements.supportReplySendBtn) {
+        elements.supportReplySendBtn.disabled = true;
+      }
+      try {
+        await sendSupportReply(message);
+        if (elements.supportReplyInput) {
+          elements.supportReplyInput.value = "";
+        }
+        await refreshSupportPanel();
+      } catch (error) {
+        showToast(error.message || "Réponse support impossible.", "error");
+      } finally {
+        if (elements.supportReplySendBtn) {
+          elements.supportReplySendBtn.disabled = false;
+        }
+      }
+    });
+  }
+
   if (elements.fingerprintModalBackdrop) {
     elements.fingerprintModalBackdrop.addEventListener("click", closeFingerprintModal);
   }
@@ -955,10 +1333,25 @@ function setupEvents() {
     elements.fingerprintModalClose.addEventListener("click", closeFingerprintModal);
   }
 
+  if (elements.orderChatModalBackdrop) {
+    elements.orderChatModalBackdrop.addEventListener("click", closeOrderChatModal);
+  }
+
+  if (elements.orderChatModalClose) {
+    elements.orderChatModalClose.addEventListener("click", closeOrderChatModal);
+  }
+
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && elements.fingerprintModal && !elements.fingerprintModal.hidden) {
       closeFingerprintModal();
     }
+    if (event.key === "Escape" && elements.orderChatModal && !elements.orderChatModal.hidden) {
+      closeOrderChatModal();
+    }
+  });
+
+  window.addEventListener("beforeunload", () => {
+    stopSupportPolling();
   });
 }
 
@@ -972,6 +1365,8 @@ async function init() {
 
   setupEvents();
   await refreshAll();
+  startSupportPolling();
 }
 
 init();
+
