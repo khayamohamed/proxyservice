@@ -181,3 +181,4 @@ await fetch("http://localhost:5000/commandes", {
 - Admin `valider-fingerprint` stores `fingerprintHash` + fingerprint blockchain tx metadata.
 - Render auto-deploy triggers on changes inside `express-mongo-backend` when `rootDir` is set to this folder.
 - Deployment note: frontend files at repo root are served by this backend (`../`) and require a backend redeploy to refresh.
+- Redeploy marker: 2026-02-19.

@@ -528,6 +528,7 @@ let providerDirectoryPollTimer = null;
 let activeOrderChatParticipant = null;
 let activeOrderChatReturnPage = "page19";
 let lastPaidRequestTimestamp = "";
+let pendingOrderSubmissionInProgress = false;
 let supportChatPollTimer = null;
 let supportChatLastRenderedAt = 0;
 let supportChatCachedMessages = [];
@@ -10133,6 +10134,9 @@ if (openPage19Btn) {
     const previousLabel = labelNode.textContent;
     openPage19Btn.disabled = true;
     labelNode.textContent = "Validation...";
+    pendingOrderSubmissionInProgress = true;
+    previousPageClass = "page18";
+    goTo("page34");
 
     try {
       const activeAddress = String((currentOrderTracking && currentOrderTracking.addressLabel) || "").trim();
@@ -10204,12 +10208,12 @@ if (openPage19Btn) {
         lastPaidRequestTimestamp = new Date().toISOString();
         applyPage19RequestDateTime(lastPaidRequestTimestamp);
       }
-
-      previousPageClass = "page18";
-      goTo("page34");
     } catch (error) {
+      previousPageClass = "page34";
+      goTo("page18");
       window.alert(error && error.message ? error.message : "Commande non enregistrée.");
     } finally {
+      pendingOrderSubmissionInProgress = false;
       openPage19Btn.disabled = false;
       labelNode.textContent = previousLabel;
       syncPage18PaymentButtonState();
@@ -10218,7 +10222,50 @@ if (openPage19Btn) {
 }
 
 if (openPage20Btn) {
-  openPage20Btn.addEventListener("click", () => {
+  openPage20Btn.addEventListener("click", async () => {
+    const activeClientEmail = getActiveClientEmail();
+    if (!activeClientEmail) {
+      previousPageClass = "page19";
+      goTo("page4");
+      return;
+    }
+
+    try {
+      await syncOngoingRequestsFromBackendForActiveParticipant();
+    } catch (error) {
+      // keep local fallback when backend is temporarily unreachable
+    }
+
+    const requestIdFromState = String(selectedOngoingRequestId || "").trim();
+    const requestFromState = requestIdFromState
+      ? getClientRequestByIdAnyStatus(requestIdFromState, activeClientEmail)
+      : null;
+    const activeRequest = requestFromState || getLatestClientRequestForWaitingFlow(activeClientEmail);
+
+    if (!activeRequest) {
+      window.alert("Aucune demande active trouvee.");
+      previousPageClass = "page19";
+      goTo("page10");
+      return;
+    }
+
+    const requestStatus = normalizeRequestLifecycleStatus(activeRequest.status, "en_attente_prestataire");
+    if (requestStatus === "annule") {
+      window.alert("Le prestataire n'est pas en mesure d'accepter la demande.");
+      previousPageClass = "page19";
+      goTo("page8");
+      return;
+    }
+
+    if (requestStatus !== "en_cours") {
+      window.alert("Le prestataire n'a pas encore repondu. Merci de patienter.");
+      previousPageClass = "page19";
+      goTo("page34");
+      return;
+    }
+
+    selectedOngoingRequestId = String(activeRequest.id || "").trim();
+    hydrateCurrentOrderContextFromOngoingRequest(activeRequest);
     applyCurrentOrderTrackingSummary();
     previousPageClass = "page19";
     goTo("page20");
@@ -10227,6 +10274,11 @@ if (openPage20Btn) {
 
 if (openPage19From34Btn) {
   openPage19From34Btn.addEventListener("click", async () => {
+    if (pendingOrderSubmissionInProgress) {
+      window.alert("Traitement de la demande en cours...");
+      return;
+    }
+
     const activeClientEmail = getActiveClientEmail();
     if (!activeClientEmail) {
       previousPageClass = "page34";
@@ -11727,7 +11779,6 @@ window.addEventListener("storage", (event) => {
   }
 });
 window.addEventListener("resize", fitActiveScreen);
-
 
 
 
