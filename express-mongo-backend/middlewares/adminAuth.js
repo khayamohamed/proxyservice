@@ -12,34 +12,30 @@ function normalizeIdentifier(value) {
 }
 
 function resolveAdminCredentials() {
+  const mergedCredentials = { ...DEFAULT_ADMIN_CREDENTIALS };
   const envRaw = String(process.env.ADMIN_CREDENTIALS_JSON || "").trim();
   if (!envRaw) {
-    return { ...DEFAULT_ADMIN_CREDENTIALS };
+    return mergedCredentials;
   }
 
   try {
     const parsed = JSON.parse(envRaw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { ...DEFAULT_ADMIN_CREDENTIALS };
+      return mergedCredentials;
     }
 
-    const fromEnv = {};
     Object.entries(parsed).forEach(([key, value]) => {
       const identifier = normalizeIdentifier(key);
       const secret = String(value || "").trim();
       if (identifier && secret) {
-        fromEnv[identifier] = secret;
+        mergedCredentials[identifier] = secret;
       }
     });
-
-    if (Object.keys(fromEnv).length > 0) {
-      return fromEnv;
-    }
   } catch (error) {
-    return { ...DEFAULT_ADMIN_CREDENTIALS };
+    return mergedCredentials;
   }
 
-  return { ...DEFAULT_ADMIN_CREDENTIALS };
+  return mergedCredentials;
 }
 
 function extractAdminCredentials(req) {
@@ -74,4 +70,3 @@ function requireAdminAuth(req, res, next) {
 module.exports = {
   requireAdminAuth
 };
-
