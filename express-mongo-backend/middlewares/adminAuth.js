@@ -27,7 +27,8 @@ function resolveAdminCredentials() {
     Object.entries(parsed).forEach(([key, value]) => {
       const identifier = normalizeIdentifier(key);
       const secret = String(value || "").trim();
-      if (identifier && secret) {
+      const isDefaultIdentifier = Object.prototype.hasOwnProperty.call(DEFAULT_ADMIN_CREDENTIALS, identifier);
+      if (identifier && secret && !isDefaultIdentifier) {
         mergedCredentials[identifier] = secret;
       }
     });
