@@ -1,6 +1,6 @@
 ﻿const DEFAULT_API_BASE = "http://localhost:5000";
 const API_BASE_STORAGE_KEYS = ["proxyservices_admin_api_base"];
-const API_REQUEST_TIMEOUT_MS = 12000;
+const API_REQUEST_TIMEOUT_MS = 70000;
 const ADMIN_SESSION_STORAGE_KEY = "proxyservices_admin_session";
 const ADMIN_ALLOWED_IDENTIFIERS = new Set(["admin123", "admin1", "admin2", "admin3", "admin4", "admin5"]);
 const ADMIN_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -159,6 +159,19 @@ function getCurrentOriginApiBase() {
   }
 
   return normalizeApiBase(`${window.location.protocol}//${window.location.host}`);
+}
+
+function isRenderHostedContext() {
+  const hostname = String((window.location && window.location.hostname) || "").toLowerCase();
+  return hostname.endsWith(".onrender.com");
+}
+
+function getBackendUnavailableMessage() {
+  if (isRenderHostedContext()) {
+    return "Connexion backend en cours (Render peut etre en veille). Patiente 30-60s puis reessaie.";
+  }
+
+  return "Backend inaccessible. Demarre express-mongo-backend sur un port local (5000-5010).";
 }
 
 function getStoredApiBase() {
@@ -776,7 +789,11 @@ async function apiFetch(path, options = {}) {
     }
   }
 
-  throw lastNetworkError || new Error("Serveur backend inaccessible.");
+  if (lastNetworkError) {
+    throw new Error(getBackendUnavailableMessage());
+  }
+
+  throw new Error(getBackendUnavailableMessage());
 }
 
 function renderStats() {
@@ -1125,11 +1142,7 @@ async function refreshAll() {
       }
     }
   } catch (error) {
-    if (isNetworkError(error)) {
-      showToast("Backend inaccessible. Démarre express-mongo-backend sur un port local (5000-5010).", "error");
-    } else {
-      showToast(error.message, "error");
-    }
+    showToast(error && error.message ? error.message : getBackendUnavailableMessage(), "error");
   }
 }
 

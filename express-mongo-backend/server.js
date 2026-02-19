@@ -25,6 +25,17 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.use((req, res, next) => {
+  const requestPath = String(req.path || "").toLowerCase();
+  const shouldDisableCache =
+    requestPath.endsWith(".html") || requestPath.endsWith("/admin-dashboard.js");
+
+  if (shouldDisableCache) {
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+  }
+  next();
+});
+
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(express.static(path.join(__dirname, "..")));
 
