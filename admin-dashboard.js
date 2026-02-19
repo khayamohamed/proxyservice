@@ -1,4 +1,5 @@
 ﻿const DEFAULT_API_BASE = "http://localhost:5000";
+const RENDER_FALLBACK_API_BASE = "https://proxyservice-x4n7.onrender.com";
 const API_BASE_STORAGE_KEYS = ["proxyservices_admin_api_base"];
 const API_REQUEST_TIMEOUT_MS = 70000;
 const ADMIN_SESSION_STORAGE_KEY = "proxyservices_admin_session";
@@ -136,7 +137,7 @@ function ensureAdminAccessOrRedirect() {
   return false;
 }
 
-function buildLocalApiBaseCandidates(startPort = 5000, endPort = 5010) {
+function buildLocalApiBaseCandidates(startPort = 5000, endPort = 5002) {
   const values = [];
   for (let port = startPort; port <= endPort; port += 1) {
     values.push(
@@ -171,7 +172,7 @@ function getBackendUnavailableMessage() {
     return "Connexion backend en cours (Render peut etre en veille). Patiente 30-60s puis reessaie.";
   }
 
-  return "Backend inaccessible. Demarre express-mongo-backend sur un port local (5000-5010).";
+  return "Backend inaccessible. Demarre express-mongo-backend sur un port local (5000-5002).";
 }
 
 function getStoredApiBase() {
@@ -209,6 +210,7 @@ function getApiCandidates() {
     normalizeApiBase(state.apiBase),
     getStoredApiBase(),
     normalizeApiBase(window.PROXY_API_BASE_URL),
+    normalizeApiBase(RENDER_FALLBACK_API_BASE),
     currentOriginCandidate
   ];
   const hostname = String((window.location && window.location.hostname) || "").toLowerCase();
@@ -218,7 +220,7 @@ function getApiCandidates() {
     hostname === "localhost" ||
     hostname === "127.0.0.1";
   const candidates = isLocalContext
-    ? [...localCandidates, ...configuredCandidates]
+    ? [...configuredCandidates, ...localCandidates]
     : configuredCandidates;
 
   return candidates.filter((value, index) => value && candidates.indexOf(value) === index);
@@ -1374,7 +1376,16 @@ async function init() {
   }
 
   const globalApiBase = typeof window.PROXY_API_BASE_URL === "string" ? window.PROXY_API_BASE_URL : "";
-  state.apiBase = getCurrentOriginApiBase() || normalizeApiBase(globalApiBase) || getStoredApiBase() || DEFAULT_API_BASE;
+  const localContextFallbackApiBase =
+    !window.location || window.location.protocol === "file:" || !window.location.host
+      ? normalizeApiBase(RENDER_FALLBACK_API_BASE)
+      : "";
+  state.apiBase =
+    getCurrentOriginApiBase() ||
+    normalizeApiBase(globalApiBase) ||
+    getStoredApiBase() ||
+    localContextFallbackApiBase ||
+    DEFAULT_API_BASE;
 
   setupEvents();
   await refreshAll();

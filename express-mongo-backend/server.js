@@ -28,7 +28,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
   const requestPath = String(req.path || "").toLowerCase();
   const shouldDisableCache =
-    requestPath.endsWith(".html") || requestPath.endsWith("/admin-dashboard.js");
+    requestPath.endsWith(".html") ||
+    requestPath.endsWith("/admin-dashboard.js") ||
+    requestPath.endsWith("/main.js") ||
+    requestPath.endsWith("/final.js");
 
   if (shouldDisableCache) {
     res.setHeader("Cache-Control", "no-store, max-age=0");
