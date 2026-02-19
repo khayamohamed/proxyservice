@@ -445,8 +445,9 @@ const page8CategoryIndicatorDashes = page8CategoryIndicator
   : [];
 const PAGE8_CATEGORY_INDICATOR_ORDER = ["electricien", "plombier", "mecanicien", "serrurier", "menuisier"];
 let currentProviderCategoryFilter = "";
+const RENDER_FALLBACK_API_BASE = "https://proxyservice-x4n7.onrender.com";
 const API_BASE_STORAGE_KEYS = ["proxyservices_admin_api_base", "proxy_api_base_url", "proxyservices_api_base_url"];
-function buildLocalApiBaseCandidates(startPort = 5000, endPort = 5010) {
+function buildLocalApiBaseCandidates(startPort = 5000, endPort = 5002) {
   const values = [];
   for (let port = startPort; port <= endPort; port += 1) {
     values.push(
@@ -460,7 +461,7 @@ function buildLocalApiBaseCandidates(startPort = 5000, endPort = 5010) {
 }
 
 const DEFAULT_PROVIDER_API_BASES = buildLocalApiBaseCandidates();
-const API_REQUEST_TIMEOUT_MS = 12000;
+const API_REQUEST_TIMEOUT_MS = 70000;
 const PROVIDER_DIRECTORY_SYNC_INTERVAL_MS = 3500;
 const PENDING_VERIFICATION_STORAGE_KEY = "proxyservices_pending_verification";
 const PENDING_VERIFICATION_STATUSES = ["en_attente"];
@@ -754,27 +755,29 @@ function saveApiBase(baseUrl) {
   }
 }
 
+function isLocalhostApiBase(value) {
+  const normalized = normalizeApiBase(value);
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized);
+}
+
 function getProviderApiCandidates() {
   const localCandidates = [...DEFAULT_PROVIDER_API_BASES];
   const currentOriginCandidate =
     window.location && window.location.protocol !== "file:" && window.location.host
       ? normalizeApiBase(`${window.location.protocol}//${window.location.host}`)
       : "";
-  const stickyCandidates = [
-    getStoredApiBase(),
-    normalizeApiBase(window.PROXY_API_BASE_URL)
+  const configuredCandidates = [
+    normalizeApiBase(window.PROXY_API_BASE_URL),
+    currentOriginCandidate,
+    normalizeApiBase(RENDER_FALLBACK_API_BASE),
+    getStoredApiBase()
   ];
-  const hostname = String((window.location && window.location.hostname) || "").toLowerCase();
-  const protocol = String((window.location && window.location.protocol) || "").toLowerCase();
-  const isLocalContext =
-    protocol === "file:" ||
-    hostname === "localhost" ||
-    hostname === "127.0.0.1";
-  const candidates = isLocalContext
-    ? [...localCandidates, ...stickyCandidates, currentOriginCandidate]
-    : [...stickyCandidates, currentOriginCandidate, ...localCandidates];
+  const candidates = [...configuredCandidates, ...localCandidates];
+  const uniqueCandidates = candidates.filter((value, index) => value && candidates.indexOf(value) === index);
+  const remoteCandidates = uniqueCandidates.filter((candidate) => !isLocalhostApiBase(candidate));
+  const localhostCandidates = uniqueCandidates.filter((candidate) => isLocalhostApiBase(candidate));
 
-  return candidates.filter((value, index) => value && candidates.indexOf(value) === index);
+  return [...remoteCandidates, ...localhostCandidates];
 }
 
 function getApiCandidates() {
@@ -8751,7 +8754,7 @@ async function submitCommandeFromCurrentContext(locationData = null) {
   }
 
   if (lastNetworkError) {
-    throw new Error("Connexion backend impossible. Lance express-mongo-backend sur un port local (5000-5010).");
+    throw new Error("Connexion backend impossible. Vérifie ta connexion internet puis réessaie.");
   }
 
   throw new Error("Serveur backend inaccessible.");
@@ -9045,7 +9048,7 @@ if (loginBtn) {
       setLoginFeedback("Aucun compte client ou prestataire trouvé avec cet email.", "error");
     } catch (error) {
       if (isNetworkError(error)) {
-        setLoginFeedback("Connexion backend impossible. Lance express-mongo-backend sur un port local (5000-5010).", "error");
+        setLoginFeedback("Connexion backend impossible. Vérifie ta connexion internet puis réessaie.", "error");
       } else {
         setLoginFeedback(error.message || "Connexion impossible.", "error");
       }
@@ -9294,7 +9297,7 @@ if (signupSubmitBtn) {
       showSubmissionWaitingPage("client");
     } catch (error) {
       if (isNetworkError(error)) {
-        setSignupFeedback("Connexion backend impossible. Lance express-mongo-backend sur un port local (5000-5010).", "error");
+        setSignupFeedback("Connexion backend impossible. Vérifie ta connexion internet puis réessaie.", "error");
       } else {
         setSignupFeedback(error.message || "Erreur serveur.", "error");
       }
@@ -9435,7 +9438,7 @@ if (providerSignupSubmitBtn) {
       showSubmissionWaitingPage("prestataire");
     } catch (error) {
       if (isNetworkError(error)) {
-        setProviderSignupFeedback("Connexion backend impossible. Lance express-mongo-backend sur un port local (5000-5010).", "error");
+        setProviderSignupFeedback("Connexion backend impossible. Vérifie ta connexion internet puis réessaie.", "error");
       } else {
         setProviderSignupFeedback(error.message || "Erreur serveur.", "error");
       }
@@ -11614,7 +11617,7 @@ if (submitProviderVerificationBtn) {
       showSubmissionWaitingPage("prestataire");
     } catch (error) {
       if (isNetworkError(error)) {
-        setProviderFeedback("Connexion backend impossible. Lance express-mongo-backend sur un port local (5000-5010).", "error");
+        setProviderFeedback("Connexion backend impossible. Vérifie ta connexion internet puis réessaie.", "error");
       } else {
         setProviderFeedback(error.message || "Erreur serveur.", "error");
       }
@@ -11724,9 +11727,6 @@ window.addEventListener("storage", (event) => {
   }
 });
 window.addEventListener("resize", fitActiveScreen);
-
-
-
 
 
 
