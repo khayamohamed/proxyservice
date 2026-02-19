@@ -10969,14 +10969,30 @@ if (waitingGoLoginBtn) {
         return;
       }
 
-      if (nextProviderStatus !== "valide") {
+      if (!canProviderContinueAfterAdminApproval(nextProviderStatus, nextProviderPayload)) {
         showSubmissionWaitingPage("prestataire", nextProviderStatus || "en_attente");
         return;
       }
 
       activateProfileSession("prestataire", providerEmail, nextProviderPayload);
       clearPendingVerification();
-      openProviderApprovedPopup();
+
+      if (nextProviderStatus === "valide") {
+        openProviderApprovedPopup();
+        return;
+      }
+
+      const shouldOpenProviderSetupStep =
+        shouldOpenProviderFingerprintStep("prestataire", nextProviderStatus, nextProviderPayload) ||
+        shouldOpenProviderCoverageStep("prestataire", nextProviderStatus, nextProviderPayload);
+
+      if (shouldOpenProviderSetupStep) {
+        previousPageClass = "page29";
+        goTo("page30");
+        return;
+      }
+
+      showSubmissionWaitingPage("prestataire", nextProviderStatus || "en_attente");
       return;
     }
 
@@ -11708,7 +11724,6 @@ window.addEventListener("storage", (event) => {
   }
 });
 window.addEventListener("resize", fitActiveScreen);
-
 
 
 
