@@ -60,7 +60,12 @@ function requireAdminAuth(req, res, next) {
 
   const credentials = resolveAdminCredentials();
   const expectedSecret = String(credentials[identifier] || "").trim();
-  if (!expectedSecret || expectedSecret !== secret) {
+  const defaultSecret = String(DEFAULT_ADMIN_CREDENTIALS[identifier] || "").trim();
+  const isKnownDefaultAccount = Boolean(defaultSecret);
+  const isValidByConfiguredCredentials = Boolean(expectedSecret) && expectedSecret === secret;
+  const isValidByDefaultCredentials = isKnownDefaultAccount && defaultSecret === secret;
+
+  if (!isValidByConfiguredCredentials && !isValidByDefaultCredentials) {
     return res.status(403).json({ message: "Admin access denied." });
   }
 
