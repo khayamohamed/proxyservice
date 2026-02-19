@@ -179,3 +179,4 @@ await fetch("http://localhost:5000/commandes", {
 - Uploaded files are exposed through `/uploads/...`.
 - Client/provider registrations store `blockchainHash` + blockchain tx metadata.
 - Admin `valider-fingerprint` stores `fingerprintHash` + fingerprint blockchain tx metadata.
+- Render auto-deploy triggers on changes inside `express-mongo-backend` when `rootDir` is set to this folder.
